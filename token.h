@@ -1,8 +1,10 @@
-# include <iostream>
-# include <string>
-using namespace std ;
+#include <iostream>
+#include <string>
+#include <sstream>
+using namespace std;
 
-enum TokenType {
+enum TokenType
+{
   LP = 1,
   RP = 2,
   INT = 3,
@@ -13,18 +15,36 @@ enum TokenType {
   T = 8,
   QUOTE = 9,
   SYMBOL = 10
-} ;
-
-struct Token
-{
-    int row ;
-    int col ;
-    string value ;
-    TokenType type ;
-    Token( int r, int c, string v, TokenType t) {
-        this->row = r ;
-        this->col = c ;
-        this->value.assign(v) ;
-        this->type = t ;
-    };
 };
+
+class Token
+{
+private:
+  int row;
+  int col;
+  string text;
+  TokenType type;
+
+public:
+  Token(int r, int c, string v, TokenType t);
+  string toString();
+}; // class Token
+
+Token::Token(int r, int c, string v, TokenType t)
+{
+  this->col = c;
+  this->row = r;
+  this->text.assign(v);
+  this->type = t;
+} // Token()
+
+string Token::toString()
+{
+  stringstream s1, s2 ;
+  s1 << this->row ;
+  s2 << this->col ;
+  string strRow = s1.str() ;
+  string strCol = s2.str() ;
+  string s = "[Row]" + strRow + " [Column]" + strCol + " " + this->text + "\n";
+  return s ;
+} // toString()
