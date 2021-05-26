@@ -6,7 +6,7 @@ using namespace std;
 
 int main()
 {
-  Scanner *sc = new Scanner();
-  Token *x = sc->getToken();
-  cout << x->toString();
+  
+  Token *x = new Token( 1, 1, "Fuck", STRING ) ;
+  cout << x->ToString();
 } // main()

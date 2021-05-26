@@ -7,15 +7,15 @@ using namespace std;
 class Scanner
 {
 private:
-    int colCounter;
-    int rowCounter;
+  int mColCounter;
+  int mRowCounter;
 
 public:
-    Token *getToken();
+  Token *getToken();
 }; // class Scanner
 
 Token *Scanner::getToken()
 {
-    Token *x = new Token(1, 1, "a string", STRING);
-    return x;
+  Token *x = new Token( 1, 1, "a", STRING );
+  return x;
 } // getToken()

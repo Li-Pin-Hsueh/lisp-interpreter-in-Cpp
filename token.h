@@ -20,31 +20,28 @@ enum TokenType
 class Token
 {
 private:
-  int row;
-  int col;
-  string text;
-  TokenType type;
+  int mRow;
+  int mCol;
+  string mText;
+  TokenType mType;
 
 public:
-  Token(int r, int c, string v, TokenType t);
-  string toString();
-}; // class Token
+  Token( int r, int c, string v, TokenType t )
+  {
+    mRow = r ;
+    mCol = c ;
+    mText = v ;
+    mType = t ;
+  } // Token()
 
-Token::Token(int r, int c, string v, TokenType t)
-{
-  this->col = c;
-  this->row = r;
-  this->text.assign(v);
-  this->type = t;
-} // Token()
-
-string Token::toString()
-{
-  stringstream s1, s2 ;
-  s1 << this->row ;
-  s2 << this->col ;
-  string strRow = s1.str() ;
-  string strCol = s2.str() ;
-  string s = "[Row]" + strRow + " [Column]" + strCol + " " + this->text + "\n";
-  return s ;
-} // toString()
+  string ToString()
+  {
+    stringstream s1, s2;
+    s1 << mRow;
+    s2 << mCol;
+    string strRow = s1.str();
+    string strCol = s2.str();
+    string s = "[Row]" + strRow + " [Column]" + strCol + " " + mText + "\n";
+    return s;
+  } // toString()
+};  // class Token
