@@ -51,7 +51,7 @@ Token *Lexer::GetToken()
   // 3.1 Return tokenString if it's not empty.
   if( !tokenString.empty() )
   {
-    return new Token( mRowCounter, startCol, tokenString, STRING ) ;
+    return new Token( mRowCounter, startCol, tokenString ) ;
   } // if()
   // 3.2 Return this SEP if it's a Token (, ), '
   else
@@ -61,7 +61,7 @@ Token *Lexer::GetToken()
       stringstream ss ;
       ss << GetChar() ;
       startCol = mColCounter ;
-      return new Token( mRowCounter, startCol, ss.str(), LP ) ;
+      return new Token( mRowCounter, startCol, ss.str() ) ;
     } // if()
     else if( cin.peek() == '"' )
     {
