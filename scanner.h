@@ -20,7 +20,6 @@ public:
 
 Token *Lexer::GetToken()
 {
-  // TODO
   string tokenString = "" ;
   int startCol = -1 ;
 
@@ -72,7 +71,6 @@ Token *Lexer::GetToken()
     } // else if()
     else if( cin.peek() == ';')
     {
-      // cout << "Call CommentHelper()..." << endl ;
       // Read all the comment line.
       while( cin.peek() != '\n') GetChar() ;
       GetChar() ; // Read new line character.
@@ -150,7 +148,7 @@ string Lexer::StringHelper()
 
   } // while
 
-  if( result.at( result.length() ) == '\n' )
+  if( result.at( result.length()-1 ) == '\n' )
     cout << "StringHelper ERROR: Not Colses..." << endl ;
   return result ;
 }

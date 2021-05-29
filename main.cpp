@@ -8,8 +8,12 @@ int main()
 {
   Lexer *lx = new Lexer() ;
   Token *r  ;
-  while( ( r = lx->GetToken()) != NULL )
+  bool end = false ;
+  while( !end )
   {
-    cout << r->ToString() << endl ;
+    r = lx->GetToken() ;
+    if ( r == NULL ) end = true ;
+    else
+      cout << r->ToString() << endl ;
   } //while()
 } // main()
