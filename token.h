@@ -53,14 +53,14 @@ public:
 
   string ToString()
   {
-    stringstream s1, s2, s3;
+    string typeArray[] = {"LP", "RP", "INT", "FLOAT",
+                          "STRING", "DOT", "NIL", "T", "QUOTE", "SYMBOL"} ;
+    stringstream s1, s2 ;
     s1 << mRow;
     s2 << mCol;
-    s3 << mType;
     string strRow = s1.str();
     string strCol = s2.str();
-    string strType = s3.str() ;
-    string s = "[Row]" + strRow + " [Column]" + strCol + " [Type]" + strType + " [Text]" + mText ;
+    string s = "[Row]" + strRow + " [Column]" + strCol + " [Type]" + typeArray[mType] + " [Text]" + mText ;
     return s;
   } // ToString()
 };  // class Token
