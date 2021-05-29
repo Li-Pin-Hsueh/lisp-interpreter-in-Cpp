@@ -5,16 +5,7 @@ using namespace std;
 
 enum TokenType
 {
-  LP = 1,
-  RP = 2,
-  INT = 3,
-  FLOAT = 4,
-  STRING = 5,
-  DOT = 6,
-  NIL = 7,
-  T = 8,
-  QUOTE = 9,
-  SYMBOL = 10
+  LP, RP, INT, FLOAT, STRING, DOT, NIL, T, QUOTE, SYMBOL
 };
 
 class Token
@@ -43,5 +34,5 @@ public:
     string strCol = s2.str();
     string s = "[Row]" + strRow + " [Column]" + strCol + " " + mText + "\n";
     return s;
-  } // toString()
+  } // ToString()
 };  // class Token
