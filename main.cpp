@@ -338,8 +338,8 @@ int main()
 {
 
   Parser *p = new Parser() ;
-
-  cout << "Welcome to OurScheme!\n" ;
+//
+  cout << "Welcome to OurScheme!\n\n" ;
 
   while ( !gProgramEnd )
   {
