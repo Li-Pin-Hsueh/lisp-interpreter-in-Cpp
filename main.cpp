@@ -2,13 +2,14 @@
 # include <string>
 # include <sstream>
 # include <ctype.h>
-
+# include <vector>
 using namespace std;
 
 // ============================================== 
 // Global Variables
 bool gProgramEnd = false ;
 bool gProgramReset = false ;
+bool gEndOfFile = false ;
 string gErrorMessage = "" ;
 
 enum TokenType
@@ -107,6 +108,7 @@ public:
 
 // ============================================== 
 // Lexer class
+// Deal with : [ String not closed Error, EOF encounterred ]
 class Lexer
 {
 private:
@@ -125,9 +127,11 @@ private:
   {
     int c = cin.get() ;
     // EOF encounterred.
-    if ( c == -1 )
+    if ( c == -1 ) {
+      gEndOfFile = true ;
       return '\0' ;
-    
+    } // if
+
     char result = ( char ) c ;
     // Increment counter.
     if ( result == '\n' )
@@ -159,12 +163,13 @@ private:
       // Escape character case.
       if ( c == '\\' && ( cin.peek() == 'n' || cin.peek() == 't' ||
                           cin.peek() == '\"' || cin.peek() == '\\' ) ) {
+
+        c = GetChar() ;  // Read \, ", n or t
         if ( c == '\\' ) result += "\\" ;
         else if ( c == '\"' ) result += "\"" ;
         else if ( c == 'n' ) result += "\n" ;
         else if ( c == 't' ) result += "\t" ;
         else cout << "StringHelper ERROR: Else case..." << endl ;
-        c = GetChar() ;  // Read \, ", n or t
       } // if()
       // Normal Case.
       else {
@@ -210,10 +215,8 @@ public:
     // 1. Skipwhitespaces
     while ( isspace( cin.peek() ) || cin.peek() == -1 ) {
       char c = GetChar() ;
-      if ( c == '\0' ) {
-        cout << "EOF..." << endl ;
-        return NULL ;
-      } // if()
+      // EOF
+      if ( c == '\0' ) return NULL ;
     } // while()
 
     // 2. Read until Separator.
@@ -279,29 +282,82 @@ public:
 
 // ============================================== 
 // Parser class
+// Deal with: [ Syntax Error ]
+class Parser
+{
+private:
+  Lexer *mLexer ;
+  vector<Token> mTokens ;
+
+public:
+  Parser()
+  {
+    mLexer = new Lexer() ;
+  } // Parser()
+
+  bool ReadSExp()
+  {
+    // Test code
+    Token *t ;
+    while ( true )
+    {
+      t = mLexer->GetToken() ;
+      // Error Encounterred.
+      if ( t == NULL || gEndOfFile || gProgramReset ) return false ;
+      mTokens.push_back( *t ) ;
+      return true ;
+    } // while()
+      
+  } // ReadSExp()
+
+  vector<Token> GetTokensCopy()
+  {
+    vector<Token> copy ;
+    for ( int i = 0 ; i < mTokens.size() ; i++ )
+    {
+      copy.push_back( mTokens.at( i ) ) ;
+    } // for
+
+    return copy ;
+  } // GetTokensCopy()
+
+  void PrintTokens()
+  {
+    for ( int i = 0 ; i < mTokens.size() ; i++ )
+    {
+      cout << mTokens.at( i ).ToString() << endl ;
+    } // for
+  } // PrintTokens()
+
+}; // class Parser
 
 // ============================================== 
 // Main function
 
 int main()
 {
-  gProgramEnd = false ;
-  gProgramReset = false ;
-  gErrorMessage = "" ;
-  Lexer *lx = new Lexer() ;
-  Token *r  ;
+
+  Parser *p = new Parser() ;
+
+  cout << "Welcome to OurScheme!\n" ;
 
   while ( !gProgramEnd )
   {
-    r = lx->GetToken() ;
-    if ( r == NULL ) gProgramEnd = true ;
-    else if ( gProgramReset ) {
-      // Reset Lexer and flag
-      gProgramReset = false ;
-      lx = new Lexer() ;
-      cout << gErrorMessage << endl ;
-    } // else if()
+    cout << "> " ;
+    bool success = p->ReadSExp() ;
+    if ( success )  // S-Exp成立
+      cout << "S-Exp success" ;
+      // p->PrintTokens() ;
+    else if ( gProgramReset ) // Lexer Error 或是 Parser Error ( Syntax Error )
+      cout << gErrorMessage << endl, gProgramReset = false ;
+    else if ( gEndOfFile )    // EOF encounterred.
+      gProgramEnd = true ;
     else
-      cout << r->ToString() << endl ;
+      cout << "Go into Error code..." << endl ;
   } // while()
+
+  if ( gEndOfFile )
+    cout << "Error (no more input) : END-OF-FILE encountered" << endl ;
+
+  cout << endl << "Thanks for using OurScheme!" << endl ;
 } // main()
