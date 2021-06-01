@@ -7,8 +7,9 @@ using namespace std;
 
 // ============================================== 
 // Global Variables
-bool gProgramEnd = false ;
-bool gProgramReset = false ;
+bool gExitFlag = false ;
+bool gStringNotColsedError = false ;
+bool gSyntaxError = false ;
 bool gEndOfFile = false ;
 string gErrorMessage = "" ;
 
@@ -114,6 +115,8 @@ class Lexer
 private:
   int mColCounter ;
   int mRowCounter ;
+  Token *mCurrentToken ;
+  /* Return true if the argument char is a Separator. */
   bool IsSep( char c )
   {
     if ( c == '(' || c == ')' || c == '\"' || c == '\'' ||
@@ -122,13 +125,13 @@ private:
     else
       return false ;
   } // IsSep()
-
+  /* Use cin.get() to read input. Do counter increment. */
   char GetChar()
   {
     int c = cin.get() ;
     // EOF encounterred.
     if ( c == -1 ) {
-      gEndOfFile = true ;
+      // gEndOfFile = true ;
       return '\0' ;
     } // if
 
@@ -144,14 +147,14 @@ private:
 
     return result ;
   } // GetChar()
-
+  /* Convert a Char to string type */
   string ToString( char c )
   {
     stringstream s ;
     s << c ;
     return s.str() ;
   } // ToString()
-
+  /* Return a token string(as string type). Assign error message(String-Not-Closed-Error).*/
   string StringHelper()
   {
     // String not close should be a ERROR.
@@ -188,7 +191,7 @@ private:
       // Important: new line has not been read.
       stringstream s1, s2 ;
       s1 << mRowCounter, s2 << mColCounter + 1 ;
-      gProgramReset = true ;
+      gSyntaxError = true ;
       gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at line " + s1.str() +
                       ", column " + s2.str() ;
       // 讀掉換行字元, 重設Counter.
@@ -199,14 +202,7 @@ private:
     
     return result ;
   } // StringHelper()
-
-public:
-  Lexer()
-  {
-    mColCounter = 0 ;
-    mRowCounter = 1 ;
-  } // Lexer()
-
+  /* Return a Token or NULL(EOF) */
   Token *GetToken()
   {
     string tokenString = "" ;
@@ -271,13 +267,36 @@ public:
     cout << "Executed to the end..." << endl ;
     return NULL ;
   } // GetToken()
-
+public:
+  Lexer()
+  {
+    mColCounter = 0 ;
+    mRowCounter = 1 ;
+    mCurrentToken = NULL ;
+  } // Lexer()
+  /* Reset line and column counters 1 and 0.*/
   void ResetCounter()
   {
     mColCounter = 0 ;
     mRowCounter = 1 ;
   } // ResetCounter()
+  /* Return current Token or next Token() */
+  Token *NextToken()
+  {
+    if ( mCurrentToken == NULL )
+      mCurrentToken = GetToken() ;
 
+    Token *t = mCurrentToken ;
+    mCurrentToken = NULL ;
+    if ( t == NULL )  gEndOfFile = true ;
+    return t ;
+  } // NextToken()
+  /* Return current Token */
+  Token *PeekToken()
+  {
+    if ( mCurrentToken == NULL ) mCurrentToken = GetToken() ;
+    return mCurrentToken ;
+  }
 }; // class Lexer
 
 // ============================================== 
@@ -294,22 +313,15 @@ public:
   {
     mLexer = new Lexer() ;
   } // Parser()
-
+  /* Return true if no Syntax-error.*/
   bool ReadSExp()
   {
-    // Test code
-    Token *t ;
-    while ( true )
-    {
-      t = mLexer->GetToken() ;
-      // Error Encounterred.
-      if ( t == NULL || gEndOfFile || gProgramReset ) return false ;
-      mTokens.push_back( *t ) ;
-      return true ;
-    } // while()
-      
+    // TODO
+    return false ;
+
   } // ReadSExp()
 
+  /* Return the Vectoe which store tokens.*/
   vector<Token> GetTokensCopy()
   {
     vector<Token> copy ;
@@ -320,7 +332,7 @@ public:
 
     return copy ;
   } // GetTokensCopy()
-
+  /* Iterate vector and print the content. */
   void PrintTokens()
   {
     for ( int i = 0 ; i < mTokens.size() ; i++ )
@@ -338,22 +350,23 @@ int main()
 {
 
   Parser *p = new Parser() ;
-//
-  cout << "Welcome to OurScheme!\n\n" ;
+  cout << "Welcome to OurScheme!\n" ;
 
-  while ( !gProgramEnd )
+  while ( !gExitFlag && !gEndOfFile )
   {
     cout << "> " ;
-    bool success = p->ReadSExp() ;
-    if ( success )  // S-Exp成立
-      cout << "S-Exp success" ;
-      // p->PrintTokens() ;
-    else if ( gProgramReset ) // Lexer Error 或是 Parser Error ( Syntax Error )
-      cout << gErrorMessage << endl, gProgramReset = false ;
-    else if ( gEndOfFile )    // EOF encounterred.
-      gProgramEnd = true ;
-    else
-      cout << "Go into Error code..." << endl ;
+    bool noSyntaxError = p->ReadSExp() ;
+
+    if ( noSyntaxError ) { // S-Exp成立
+      p->PrintTokens() ;
+    } // if()
+    else {
+      // Print error message.
+      cout << gErrorMessage << endl ;
+      // Reset error flag.
+      gSyntaxError = false, gStringNotColsedError = false ;
+    }
+
   } // while()
 
   if ( gEndOfFile )
