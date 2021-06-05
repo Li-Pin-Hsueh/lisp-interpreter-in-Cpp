@@ -71,11 +71,11 @@ public:
     else if ( v == ")" ) t = RP ;
     else if ( v == "." ) t = DOT ;
     else if ( v == "'" ) t = QUOTE ;
-    else if ( v == "nil" || v == "#f" ) v = "nil", t = NIL ;
-    else if ( v == "t" || v == "#t" ) v = "#t", t = T ;
+    else if ( v == "nil" || v == "#f" )  t = NIL ;
+    else if ( v == "t" || v == "#t" )  t = T ;
     else if ( IsInt( v ) ) t = INT ;
     else if ( IsFloat( v ) ) t = FLOAT ;
-    else if ( v == "'" ) v = "QUOTE", t = QUOTE ;
+    else if ( v == "'" ) t = QUOTE ;
     else if ( v.at( 0 ) == '\"' ) cout << "Token init ERROR: STRING..." << endl ;
     else t = SYMBOL ;
 
@@ -105,6 +105,12 @@ public:
     string s = "[Line]" + strRow + " [Column]" + strCol + " [Type]" + typeArray[mType] + " [Text]" + mText ;
     return s;
   } // ToString()
+
+  TokenType GetType()
+  {
+    return mType ;
+  } // GetType()
+
 };  // class Token
 
 // ============================================== 
@@ -130,10 +136,8 @@ private:
   {
     int c = cin.get() ;
     // EOF encounterred.
-    if ( c == -1 ) {
-      // gEndOfFile = true ;
+    if ( c == -1 ) 
       return '\0' ;
-    } // if
 
     char result = ( char ) c ;
     // Increment counter.
@@ -144,7 +148,7 @@ private:
     } // if
     else
       mColCounter += 1 ;
-
+    // cout << "console: " << (char) result << endl ;
     return result ;
   } // GetChar()
   /* Convert a Char to string type */
@@ -191,7 +195,7 @@ private:
       // Important: new line has not been read.
       stringstream s1, s2 ;
       s1 << mRowCounter, s2 << mColCounter + 1 ;
-      gSyntaxError = true ;
+      gStringNotColsedError = true ;
       gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at line " + s1.str() +
                       ", column " + s2.str() ;
       // 讀掉換行字元, 重設Counter.
@@ -295,6 +299,7 @@ public:
   Token *PeekToken()
   {
     if ( mCurrentToken == NULL ) mCurrentToken = GetToken() ;
+    if ( mCurrentToken == NULL ) gEndOfFile = true ;
     return mCurrentToken ;
   }
 }; // class Lexer
@@ -307,6 +312,102 @@ class Parser
 private:
   Lexer *mLexer ;
   vector<Token> mTokens ;
+  Token *mCurrentToken ;
+  /* Get A Token and Push into Vector.*/
+  void Eat()
+  {
+    Token *t = mLexer->NextToken() ;
+    mTokens.push_back( *t ) ;
+    mCurrentToken = t ;
+  }
+  /* Parse a Atom */
+
+  void Atom()
+  {
+    Token *pToken = mLexer->PeekToken() ;
+    if ( pToken == NULL ) return ;
+
+    TokenType t = pToken->GetType() ;
+    if ( t == SYMBOL || t == INT || t == FLOAT ||
+         t == STRING || t == NIL || t == T )
+         Eat() ;
+    else {
+
+      gSyntaxError = true ;
+      gErrorMessage = "ERROR (unexpected token) :" ;
+      gErrorMessage += " atom or '(' expected when token " ;
+      gErrorMessage += "at Line X Column Y is" ;
+
+    } // else()
+    // TODO
+    return ;
+  } // Atom()
+
+  /* Parse a SExpression */
+  void SExpression()
+  {
+    // TODO
+    Token *pToken = mLexer->PeekToken() ;
+    if ( pToken == NULL ) return ;
+
+    if ( pToken->GetType() == LP ) {
+      Eat() ;
+      pToken = mLexer->PeekToken() ;
+      if ( pToken == NULL ) return ;
+      // () is a valid ATOM
+      if ( pToken->GetType() == RP ) {
+        Eat() ;
+        return ;
+      } // if
+    } // if()
+    else if ( pToken->GetType() == QUOTE ) {
+      Eat() ;
+      SExpression() ;
+      return ;
+    } // else if()
+    else {
+      Atom() ;
+      return ;
+    } // else()
+
+    SExpression() ;
+    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) return ;
+
+    pToken = mLexer->PeekToken() ;
+    if ( pToken == NULL ) return ;
+    
+    while ( pToken->GetType() != DOT && pToken->GetType() != RP && 
+            !( gSyntaxError || gStringNotColsedError || gEndOfFile ) ) {
+              SExpression() ;
+              pToken = mLexer->PeekToken() ;
+              if ( pToken == NULL ) return ;
+            } // while()
+
+    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) return ;
+    
+    if ( pToken->GetType() == DOT ) {
+      Eat() ;
+      SExpression() ;
+    } // if()
+
+    pToken = mLexer->PeekToken() ;
+    if ( pToken == NULL ) return ;
+
+    if (pToken->GetType() == RP ) {
+      Eat() ;
+      return ;
+    } // if()
+    else {
+      Eat() ;
+      gSyntaxError = true ;
+      gErrorMessage = "Something wrong at " +  pToken->ToString() ;
+      return ;
+    } // else
+
+    
+  } // SExpression()
+
+  /* Parse a Atom */
 
 public:
   Parser()
@@ -317,7 +418,24 @@ public:
   bool ReadSExp()
   {
     // TODO
-    return false ;
+    // Reset
+
+    if ( mLexer->PeekToken() == NULL )
+    {
+      gEndOfFile = true ;
+      return false ;
+    } // if()
+    else
+      SExpression() ;
+
+    
+    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) {
+      while ( cin.peek() != '\n' ) cin.get() ;
+      cin.get() ; 
+      return false ;
+    } // if()
+
+    return true ;
 
   } // ReadSExp()
 
@@ -340,6 +458,20 @@ public:
       cout << mTokens.at( i ).ToString() << endl ;
     } // for
   } // PrintTokens()
+  
+  /* Reset Vector */
+  void ResetTokenVector()
+  {
+    mTokens.clear() ;
+    return ;
+  } //ResetTokenVector()
+
+  /* Reset mLexer */
+  void ResetLexer()
+  {
+    mLexer = new Lexer() ;
+    return ;
+  } // ResetLexer()
 
 }; // class Parser
 
@@ -359,12 +491,17 @@ int main()
 
     if ( noSyntaxError ) { // S-Exp成立
       p->PrintTokens() ;
+      p->ResetTokenVector() ;
+      p->ResetLexer() ;
     } // if()
     else {
       // Print error message.
       cout << gErrorMessage << endl ;
       // Reset error flag.
       gSyntaxError = false, gStringNotColsedError = false ;
+      // Reset Parser
+      delete p ;
+      Parser *p = new Parser() ;
     }
 
   } // while()
