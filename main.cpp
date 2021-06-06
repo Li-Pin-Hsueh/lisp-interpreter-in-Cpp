@@ -111,6 +111,20 @@ public:
     return mType ;
   } // GetType()
 
+  string GetPosInfoAsString()
+  {
+    stringstream s1, s2 ;
+    s1 << mRow ;
+    s2 << mCol ;
+    string result = "Line " + s1.str() + " Column " + s2.str() ;
+    return result ;
+  } // GetLineAsString()
+
+  string GetText()
+  {
+    return mText ;
+  } // GetText()
+
 };  // class Token
 
 // ============================================== 
@@ -180,7 +194,6 @@ private:
       } // if()
       // Normal Case.
       else {
-        if ( c == '\n' ) end = true ;
         if ( c == '\"' ) end = true ;
         stringstream ss ;
         ss << c ;
@@ -190,16 +203,14 @@ private:
     } // while
     
     // Set String Error here.
-    if ( result.at( result.length()-1 ) != '\"' ) {
-      // 注意: 換行字元還沒讀掉
-      // Important: new line has not been read.
+    if ( result.length() == 1 || result.at( result.length()-1 ) != '\"' ) {
+      // 注意 換行還沒讀 留給parser讀
       stringstream s1, s2 ;
       s1 << mRowCounter, s2 << mColCounter + 1 ;
       gStringNotColsedError = true ;
-      gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at line " + s1.str() +
-                      ", column " + s2.str() ;
-      // 讀掉換行字元, 重設Counter.
-      GetChar() ;
+      gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at Line " + s1.str() +
+                      ", Column " + s2.str() ;
+      
       ResetCounter() ;
 
     } // if()
@@ -301,7 +312,32 @@ public:
     if ( mCurrentToken == NULL ) mCurrentToken = GetToken() ;
     if ( mCurrentToken == NULL ) gEndOfFile = true ;
     return mCurrentToken ;
-  }
+  } // PeekToken()
+
+  /* 重新調整Counter的位置 */
+  void AdjustCounter()
+  {
+    /* 當Parser印出SEXPR後 如果該行只有space或tab 就要全部跳過*/
+    /* 從下一行才開始算第一行*/
+    // TODO
+    while ( cin.peek() != '\n' && cin.peek() != -1 ) {
+      // 如果有valid input 不能讀掉
+      if ( !isspace( cin.peek() ) ) return ;
+      // 遇到comment 讀掉整行
+      if ( cin.peek() == ';' )
+        while ( cin.peek() != '\n') GetChar() ;
+      else
+        GetChar() ;
+        
+    } // while()
+
+    // 讀掉換行並重設RowCounter
+    GetChar() ;
+    mRowCounter = 1 ;
+    return ;
+
+  } // AdjustCounter()
+
 }; // class Lexer
 
 // ============================================== 
@@ -320,9 +356,9 @@ private:
     mTokens.push_back( *t ) ;
     mCurrentToken = t ;
   }
-  /* Parse a Atom */
 
-  void Atom()
+  /* Parse a Atom */
+  void Parse_ATOM()
   {
     Token *pToken = mLexer->PeekToken() ;
     if ( pToken == NULL ) return ;
@@ -332,80 +368,114 @@ private:
          t == STRING || t == NIL || t == T )
          Eat() ;
     else {
-
       gSyntaxError = true ;
       gErrorMessage = "ERROR (unexpected token) :" ;
-      gErrorMessage += " atom or '(' expected when token " ;
-      gErrorMessage += "at Line X Column Y is" ;
-
+      gErrorMessage += " atom or '(' expected when token at " ;
+      gErrorMessage += pToken->GetPosInfoAsString() ;
+      gErrorMessage += " is >>" + pToken->GetText() + "<<";
+      Eat() ;
     } // else()
     // TODO
     return ;
-  } // Atom()
+  } // Parse_ATOM()
 
-  /* Parse a SExpression */
-  void SExpression()
+  /* Parse a S-Expression */
+  void Parse_SEXPR()
   {
-    // TODO
+    // Always peek token first until syntax valid
+    // Always check EOF when peek a token
     Token *pToken = mLexer->PeekToken() ;
-    if ( pToken == NULL ) return ;
+    if ( gEndOfFile || gStringNotColsedError || gSyntaxError ) return ;
 
+    // Grammar
+    // <S-exp> ::= LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
     if ( pToken->GetType() == LP ) {
       Eat() ;
       pToken = mLexer->PeekToken() ;
-      if ( pToken == NULL ) return ;
-      // () is a valid ATOM
+      if ( gEndOfFile || gStringNotColsedError || gSyntaxError ) return ;
+      // 這裡比較特殊 多判斷一次看是不是()這個ATOM
+      // Grammar
+      // <ATOM>  ::= LEFT-PAREN RIGHT-PAREN
       if ( pToken->GetType() == RP ) {
         Eat() ;
         return ;
       } // if
     } // if()
+
+    // Grammar
+    // <S-exp> ::= QUOTE <S-exp>
     else if ( pToken->GetType() == QUOTE ) {
       Eat() ;
-      SExpression() ;
+      Parse_SEXPR() ;
       return ;
     } // else if()
+
+    // Grammar
+    // <S-exp> ::= <ATOM>
+    // <ATOM>  ::= SYMBOL | INT | FLOAT | STRING 
+    //             | NIL | T | LEFT-PAREN RIGHT-PAREN
     else {
-      Atom() ;
+      Parse_ATOM() ;
       return ;
     } // else()
 
-    SExpression() ;
-    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) return ;
+    // Continue withe the first Grammar
+    // <S-exp> ::= LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
+    //                        ^ Start from here
+    Parse_SEXPR() ;
+    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) return ; // Check error after parse function()
 
+    // Continue
     pToken = mLexer->PeekToken() ;
-    if ( pToken == NULL ) return ;
+    if ( gEndOfFile || gStringNotColsedError || gSyntaxError ) return ;
     
     while ( pToken->GetType() != DOT && pToken->GetType() != RP && 
             !( gSyntaxError || gStringNotColsedError || gEndOfFile ) ) {
-              SExpression() ;
+              // Grammar
+              // <S-exp> ::= LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
+              //                                ^ Start from here ( repeat 1 or N times )
+              Parse_SEXPR() ;
               pToken = mLexer->PeekToken() ;
-              if ( pToken == NULL ) return ;
+              if ( gEndOfFile || gStringNotColsedError || gSyntaxError ) return ;
             } // while()
 
-    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) return ;
+    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) return ; // Check error after parse function()
     
+
+    // Grammar
+    // <S-exp> ::= LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
+    //                                              ^ Start from here ( 0 or 1 time )
     if ( pToken->GetType() == DOT ) {
       Eat() ;
-      SExpression() ;
+      Parse_SEXPR() ;
+      // Check error after parse function()
+      if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) return ;
     } // if()
 
     pToken = mLexer->PeekToken() ;
-    if ( pToken == NULL ) return ;
+    if ( gEndOfFile || gStringNotColsedError || gSyntaxError ) return ;
 
+    // Grammar
+    // <S-exp> ::= LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
+    //                                                            ^ Start from here
     if (pToken->GetType() == RP ) {
       Eat() ;
       return ;
     } // if()
     else {
-      Eat() ;
+      // Eat() ;
       gSyntaxError = true ;
-      gErrorMessage = "Something wrong at " +  pToken->ToString() ;
+      gErrorMessage = "ERROR (unexpected token) : ')' expected " ;
+      gErrorMessage += "when token at " ;
+      gErrorMessage += pToken->GetPosInfoAsString() ;
+      gErrorMessage += " is >>" ;
+      gErrorMessage += pToken->GetText() ;
+      gErrorMessage += "<<" ;
       return ;
     } // else
 
     
-  } // SExpression()
+  } // Parse_SEXPR()
 
   /* Parse a Atom */
 
@@ -417,25 +487,15 @@ public:
   /* Return true if no Syntax-error.*/
   bool ReadSExp()
   {
-    // TODO
-    // Reset
+    if ( mLexer->PeekToken() == NULL ) return false ;
+    else Parse_SEXPR() ;
 
-    if ( mLexer->PeekToken() == NULL )
-    {
-      gEndOfFile = true ;
-      return false ;
-    } // if()
-    else
-      SExpression() ;
-
-    
     if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) {
       while ( cin.peek() != '\n' ) cin.get() ;
       cin.get() ; 
       return false ;
     } // if()
-
-    return true ;
+    else return true ;
 
   } // ReadSExp()
 
@@ -470,6 +530,7 @@ public:
   void ResetLexer()
   {
     mLexer = new Lexer() ;
+    mLexer->AdjustCounter() ;
     return ;
   } // ResetLexer()
 
@@ -483,14 +544,14 @@ int main()
 
   Parser *p = new Parser() ;
   cout << "Welcome to OurScheme!\n" ;
-
+  cout << "> " ;
   while ( !gExitFlag && !gEndOfFile )
   {
-    cout << "> " ;
     bool noSyntaxError = p->ReadSExp() ;
 
     if ( noSyntaxError ) { // S-Exp成立
       p->PrintTokens() ;
+      cout << "> " ;
       p->ResetTokenVector() ;
       p->ResetLexer() ;
     } // if()
@@ -502,6 +563,7 @@ int main()
       // Reset Parser
       delete p ;
       Parser *p = new Parser() ;
+      cout << "> " ;
     }
 
   } // while()
