@@ -136,6 +136,7 @@ private:
   int mColCounter ;
   int mRowCounter ;
   Token *mCurrentToken ;
+
   /* Return true if the argument char is a Separator. */
   bool IsSep( char c )
   {
@@ -145,6 +146,7 @@ private:
     else
       return false ;
   } // IsSep()
+  
   /* Use cin.get() to read input. Do counter increment. */
   char GetChar()
   {
@@ -165,6 +167,7 @@ private:
     // cout << "console: " << (char) result << endl ;
     return result ;
   } // GetChar()
+  
   /* Convert a Char to string type */
   string ToString( char c )
   {
@@ -172,6 +175,7 @@ private:
     s << c ;
     return s.str() ;
   } // ToString()
+  
   /* Return a token string(as string type). Assign error message(String-Not-Closed-Error).*/
   string StringHelper()
   {
@@ -217,6 +221,7 @@ private:
     
     return result ;
   } // StringHelper()
+  
   /* Return a Token or NULL(EOF) */
   Token *GetToken()
   {
@@ -282,6 +287,7 @@ private:
     cout << "Executed to the end..." << endl ;
     return NULL ;
   } // GetToken()
+
 public:
   Lexer()
   {
@@ -289,12 +295,14 @@ public:
     mRowCounter = 1 ;
     mCurrentToken = NULL ;
   } // Lexer()
+  
   /* Reset line and column counters 1 and 0.*/
   void ResetCounter()
   {
     mColCounter = 0 ;
     mRowCounter = 1 ;
   } // ResetCounter()
+  
   /* Return current Token or next Token() */
   Token *NextToken()
   {
@@ -306,6 +314,7 @@ public:
     if ( t == NULL )  gEndOfFile = true ;
     return t ;
   } // NextToken()
+  
   /* Return current Token */
   Token *PeekToken()
   {
@@ -319,7 +328,6 @@ public:
   {
     /* 當Parser印出SEXPR後 如果該行只有space或tab 就要全部跳過*/
     /* 從下一行才開始算第一行*/
-    // TODO
     while ( cin.peek() != '\n' && cin.peek() != -1 ) {
       // 如果有valid input 不能讀掉
       if ( !isspace( cin.peek() ) ) return ;
@@ -349,6 +357,7 @@ private:
   Lexer *mLexer ;
   vector<Token> mTokens ;
   Token *mCurrentToken ;
+  
   /* Get A Token and Push into Vector.*/
   void Eat()
   {
@@ -375,7 +384,7 @@ private:
       gErrorMessage += " is >>" + pToken->GetText() + "<<";
       Eat() ;
     } // else()
-    // TODO
+
     return ;
   } // Parse_ATOM()
 
@@ -480,6 +489,7 @@ private:
   /* Parse a Atom */
 
 public:
+  
   Parser()
   {
     mLexer = new Lexer() ;
@@ -510,6 +520,7 @@ public:
 
     return copy ;
   } // GetTokensCopy()
+  
   /* Iterate vector and print the content. */
   void PrintTokens()
   {
