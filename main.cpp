@@ -13,6 +13,11 @@ bool gSyntaxError = false ;
 bool gEndOfFile = false ;
 string gErrorMessage = "" ;
 
+enum TraversalDirection
+{
+  LEFT, RIGHT, ROOT
+};
+
 enum NodeType
 {
   INIT_NODE, ATOM_NODE, QUOTE_NODE, LP_NODE
@@ -108,7 +113,7 @@ public:
 
   string ToString()
   {
-    string typeArray[] = {"LP", "RP", "INT", "FLOAT",
+    string typeArray[] = {"init", "LP", "RP", "INT", "FLOAT",
                           "STRING", "DOT", "NIL", "T", "QUOTE", "SYMBOL"} ;
     stringstream s1, s2 ;
     s1 << mRow;
@@ -178,7 +183,7 @@ public:
 
   void Set( NodeType nType, Token token )
   {
-    mContent = token.GetText() ;
+    mContent.assign( token.GetText() ) ;
     mNodeType = nType ;
     mTokenType = token.GetType() ;
     if ( nType == ATOM_NODE || nType == QUOTE_NODE ) {
@@ -200,7 +205,6 @@ public:
     if ( leaf ) {
       mLeft = NULL ;
       mRight = NULL ;
-      return ;
     } // if()
     else {
       mLeft = new TreeNode() ;
@@ -224,8 +228,15 @@ public:
     mContent = s ;
     mNodeType = nT ;
     mTokenType = tT ;
-    mLeft = NULL ;
-    mRight = NULL ;
+    if ( nT == ATOM_NODE || nT == QUOTE_NODE ) {
+      mLeft = NULL ;
+      mRight = NULL ;
+    } // if()
+    else {
+      mLeft = new TreeNode() ;
+      mRight = new TreeNode() ;
+    } // else
+
   } // ModifyContent()
 
 } ; // class TreeNode
@@ -463,7 +474,6 @@ private:
   } // Eat()
 
   // Parse a Atom 
-
   void Parse_ATOM()
   {
     Token *pToken = mLexer->PeekToken() ;
@@ -492,7 +502,7 @@ private:
     // Always check EOF when peek a token
     Token *pToken = mLexer->PeekToken() ;
     if ( gEndOfFile || gStringNotColsedError || gSyntaxError ) return ;
-
+    // cout << pToken->ToString() << endl ;
     // Grammar
     // <S-exp> ::= LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
     if ( pToken->GetType() == LP ) {
@@ -583,254 +593,172 @@ private:
     
   } // Parse_SEXPR()
 
-  // Build a tree-like structur 
-  void Start_BuildTree( TreeNode *current )
+  // Build a Tree-Like structure
+  void Build_Tree( TreeNode *current, TraversalDirection direction, bool previousDot )
   {
-    Token currentToken ;
-    bool dot = false ;
-    // Copy and erase first element of vector
-    if ( !mTokens.empty() ) {
-      currentToken = mTokens.at( 0 ) ;
-      mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-    } // if()
-
-    else {
-      cout << "Vector is empty..." << endl ;
+    if ( current == NULL ) {
+      cout << "NULL" << endl ;
       return ;
-    } // else
+    } // if()
+    Token currentToken ;
+    bool currentDot = false ;
 
-    // 如果Token是左括號 
-    if ( currentToken.GetType() == LP ) {
-      // 建立新的LP_NODE
+    // Get current toke and DO NOT ERASE
+    if ( mTokens.empty() ) {
+      cout << "Error Build_Tree() : Vector is empty..." << endl ;
+      return ;
+    } // if()
+    currentToken = mTokens.at( 0 ) ;
+
+    /*
+      如果current token是LEFT_PAREN
+      */
+    if ( currentToken.GetType() == LP )
+    {
+      // 先Erase目前的Token
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 檢查下一個Token是不是RP
+      // 如果是RP 形成一個ATOM
+      if ( mTokens.at( 0 ).GetType() == RP )
+      {
+        // 先把RP給erase()
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        // 將目前指向的Node設定為ATOM
+        current->ModifyContent( "()", ATOM_NODE, NIL ) ;
+        return ;
+      } // if()
+      
+      // 若為一般的LEFT_PAREN
+      // 左右邊一律將current設定為LP_NODE
       current->Set( LP_NODE, currentToken ) ;
-      
-      // 檢查是不是特殊case -> ()
-      Token nextToken = mTokens.at( 0 ) ;
-      if ( nextToken.GetType() == RP ) {
-        // 把右括號erase掉
-        if ( mTokens.size() <= 0 ) cout << "ERROE Erase()" << endl ;
-        mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-        current->ModifyContent( "()", ATOM_NODE, NIL ) ;
-        return ;   
-      } // if()
-
-      // Left-Recursive
-      Left_BuildTree( current->mLeft ) ;
-      // Erase DOT token
-      if ( mTokens.size() > 0 ) {
-        nextToken = mTokens.at( 0 ) ;
-        if ( nextToken.GetType() == DOT ) {
-          mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-          dot = true ;
-        } // if()
-      } // if()
-      // Right-Recursive
-      Right_BuildTree( current->mRight, dot ) ;
-      // Erase RP token.
-      if ( mTokens.size() > 0 ) {
-        nextToken = mTokens.at( 0 ) ;
-        if ( nextToken.GetType() == RP )
-          mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-        else cout << "ERROR: must be RP..." << endl ;
-      } // if()
-      else
-        cout << "ERROR: Vector is empty..." << endl ;
     } // if()
 
-    // 如果Token是QUOTE
-    else if ( currentToken.GetType() == QUOTE ) {
-      // 創造一個INIT NODE
-      current->Set( "", INIT_NODE, INIT_TYPE, false ) ;
-     
-      // 左邊放QUOTE 直接進右邊
+    /*
+      如果current token是QUOTE
+      */
+    else if ( currentToken.GetType() == QUOTE )
+    {
+      // 遇到QUOTE current設定成INIT_NODE(空骨架)
+      // 直接設定左邊成新的QUOTE NODE
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      current->ModifyContent( "", INIT_NODE, INIT_TYPE ) ;
       current->mLeft = new TreeNode( QUOTE_NODE, currentToken ) ;
-      // Recursive right
-      Right_BuildTree( current->mRight, false ) ;
+      // 直接往右邊遞迴, 且dot一定是false( quote後面dot會error )
+      Build_Tree( current->mRight, RIGHT, false ) ;
+      return ;
     } // else if()
 
-    // 如果Token是ATOM 
-    else {
-      current->Set( ATOM_NODE, currentToken ) ;
-    } // else()
-
-    // Debug console
-    // cout << "Debug mode: " << mHeadPtr->ToString() << endl ;
-
-  } // Start_BuildTree()
-
-  // Recursive function for left node 
-  void Left_BuildTree( TreeNode *current )
-  {
-    // TODO
-    Token currentToken ;
-    bool dot = false ;
-    // Copy and erase first element of vector
-    if ( !mTokens.empty() ) {
-      currentToken = mTokens.at( 0 ) ;
-      mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-    } // if()
-
-    else {
-      cout << "Vector is empty..." << endl ;
+    /*
+      如果current token是DOT 這是一個不應該發生的case
+     */
+    else if ( currentToken.GetType() == DOT )
+    {
+      cout << "ERROR Build_Tree(): Current Token is DOT..." << endl ;
       return ;
-    } // else
-
-    // 如果Token是左括號 
-    if ( currentToken.GetType() == LP ) {
-      // 建立新的LP_NODE
-      current ->Set( LP_NODE, currentToken ) ;
-      
-      // 檢查是不是特殊case -> ()
-      Token nextToken = mTokens.at( 0 ) ;
-      if ( nextToken.GetType() == RP ) {
-        // 把右括號erase掉
-        if ( mTokens.size() <= 0 ) cout << "ERROE Erase()" << endl ;
-        mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-        current->ModifyContent( "()", ATOM_NODE, NIL ) ;
-        return ;   
-      } // if()
-
-      // Left-Recursive
-      Left_BuildTree( current->mLeft ) ;
-      // Erase DOT token
-      if ( mTokens.size() > 0 ) {
-        nextToken = mTokens.at( 0 ) ;
-        if ( nextToken.GetType() == DOT ) {
-          mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-          dot = true ;
-        } // if()
-      } // if()
-      // Right-Recursive
-      Right_BuildTree( current->mRight, dot ) ;
-      // Erase RP token.
-      if ( mTokens.size() > 0 ) {
-        nextToken = mTokens.at( 0 ) ;
-        if ( nextToken.GetType() == RP )
-          mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-        else cout << "ERROR: must be RP..." << endl ;
-      } // if()
-      else
-        cout << "ERROR: Vector is empty..." << endl ;
-    } // if()
-
-    // 如果Token是QUOTE
-    else if ( currentToken.GetType() == QUOTE ) {
-      // 創造一個INIT NODE
-      current->Set( "", INIT_NODE, INIT_TYPE, false ) ;
-      
-      // 左邊放QUOTE 直接進右邊
-      current->mLeft = new TreeNode( QUOTE_NODE, currentToken ) ;
-      // Recursive right
-      Right_BuildTree( current->mRight, dot ) ;
     } // else if()
 
-    // 如果Token是ATOM 
-    else {
-      current->Set( ATOM_NODE, currentToken ) ;
-    } // else()
-    
-    return ;
-
-  } // Left_BuildTree()
-
-  // Recursive function for right node 
-  void Right_BuildTree( TreeNode *current, bool dot )
-  {
-    // TODO
-    Token currentToken ;
-    // Copy and erase first element of vector
-    // 注意 這裡要確定不是RP才Erase()
-    if ( !mTokens.empty() ) {
-      currentToken = mTokens.at( 0 ) ;
-    } // if()
-
-    else {
-      cout << "Vector is empty..." << endl ;
-      return ;
-    } // else
-
-    // 如果Token是RP -> nil
-    if ( currentToken.GetType() == RP ) {
+    /*
+      如果current token是RP 只能在右邊方向發生
+     */
+    else if ( currentToken.GetType() == RP )
+    {
+      if ( direction == LEFT ) {
+        cout << "ERROR Build_Tree(): RP in left direction..." << endl ;
+        return ;
+      } // if()
+      // RP 長出NIL 不ERASE
       current->ModifyContent( "nil", ATOM_NODE, NIL ) ;
-    } // if()
-
-    // 如果Token是LP 且沒DOT
-    else if ( currentToken.GetType() == LP && ! dot ) {
-      // 建立Init Node 不Erase
-      current->Set( "", INIT_NODE, INIT_TYPE, false ) ;
-      
+      return ;
     } // else if()
 
-    // 如果Token是LP 且有DOT
-    else if ( currentToken.GetType() == LP && dot ) {
-      // 建立新的LP_NODE
-      mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-      current->Set( LP_NODE, currentToken ) ;
-      
-      // 檢查是不是特殊case -> ()
-      Token nextToken = mTokens.at( 0 ) ;
-      if ( nextToken.GetType() == RP ) {
-        // 把右括號erase掉
-        if ( mTokens.size() <= 0 ) cout << "ERROE Erase()" << endl ;
-        mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-        current->ModifyContent( "()", ATOM_NODE, NIL ) ;
-        return ;   
-      } // if()
-
-      // Left-Recursive
-      Left_BuildTree( current->mLeft ) ;
-      // Erase DOT token
-      bool current_dot_flag = false ;
-      if ( mTokens.size() > 0 ) {
-        nextToken = mTokens.at( 0 ) ;
-        if ( nextToken.GetType() == DOT ) {
-          mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-          current_dot_flag = true ;
-        } // if() 
-      } // if()
-      // Right-Recursive
-      Right_BuildTree( current->mRight, current_dot_flag ) ;
-      // Erase RP token.
-      if ( mTokens.size() > 0 ) {
-        nextToken = mTokens.at( 0 ) ;
-        if ( nextToken.GetType() == RP )
-          mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-        else cout << "ERROR: must be RP..." << endl ;
-      } // if()
-      else
-        cout << "ERROR: Vector is empty..." << endl ;
-    } // else if()
-
-    // 如果Token是QUOTE
-    else if ( currentToken.GetType() == QUOTE ) {
-      // 創造一個INIT NODE
-      mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
-      current->Set( "", INIT_NODE, INIT_TYPE, false ) ;
-      
-      // 左邊放QUOTE 直接進右邊
-      current->mLeft = new TreeNode( QUOTE_NODE, currentToken ) ;
-      // Recursive right
-      Right_BuildTree( current->mRight, false ) ;
-    } // else if()
-
-    // 如果Token是Else 
-    else {
-      if ( dot == true ) {
-        mTokens.erase( mTokens.begin(), mTokens.begin()+1 ) ;
+    /*
+      ATOM的狀況 分左右邊
+     */
+    else
+    {
+      if ( direction != RIGHT || previousDot )
+      {
+        // erase掉current token
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
         current->Set( ATOM_NODE, currentToken ) ;
+        return ;
       } // if()
-      else {
-        // Create init node
-        current->Set( "", INIT_NODE, INIT_TYPE, false ) ;
-        
-        Left_BuildTree( current->mLeft ) ;
-        Right_BuildTree( current->mRight, false ) ;
-      } // else
+
+      // 沒有previous dot 形成空骨架 不erase
+      current->ModifyContent( "", INIT_NODE, INIT_TYPE ) ;
+      // 遞迴
+      Build_Tree( current->mLeft, LEFT, false ) ;
+      // 嘗試讀到DOT
+      currentDot = false ;
+      if ( mTokens.at( 0 ).GetType() == DOT )
+      {
+        // erase掉DOT
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        currentDot = true ;
+      } // if()
+      // 往右邊
+      Build_Tree( current->mRight, RIGHT, currentDot ) ;
+      // 處理DOT
+      if ( mTokens.size() > 0 && mTokens.at( 0 ).GetType() == DOT) {
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        TreeNode *newNode = new TreeNode() ;
+        newNode->ModifyContent( "", INIT_NODE, INIT_TYPE ) ;
+        newNode->mLeft = current->mRight ;
+        current->mRight = newNode ;
+        // 往右邊
+        Build_Tree( newNode->mRight, RIGHT, true ) ;
+      } // if ()
+      return ;
     } // else
+
+    // 一併遞迴
+    Build_Tree( current->mLeft, LEFT, false ) ;
+    // 嘗試讀到DOT
+    if ( mTokens.at( 0 ).GetType() == DOT )
+    {
+      // erase掉DOT
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      currentDot = true ;
+    } // if()
+    // 往右邊
+    Build_Tree( current->mRight, RIGHT, currentDot ) ;
+  
+    // 處理 "應該要有的RP"
+    if ( mTokens.at( 0 ).GetType() == RP )
+    {
+      // erase掉RP
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      return ;
+    } // if()
+    else
+    {
+      // 沒有RP current->right要重接
+      TreeNode *newNode = new TreeNode() ;
+      newNode->ModifyContent ( "", INIT_NODE, INIT_TYPE ) ;
+      // newNode的左邊設定成current的右邊
+      newNode->mLeft = current->mRight ;
+      // current的右邊設定成newNode
+      current->mRight = newNode ;
+      
+      currentDot = false ;
+      if ( mTokens.at( 0 ).GetType() == DOT ) {
+        // erase掉DOT
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        currentDot = true ;
+      } // if()
+
+      // Go right
+      Build_Tree( newNode->mRight, RIGHT, currentDot ) ;
+      if ( mTokens.at( 0 ).GetType() == RP )
+        // erase掉RP
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      else cout << "應該要有RP" << endl ;
+      return ;
+    } // else()
 
     return ;
 
-  } // Right_BuildTree()
+  } // Build_Tree()
 
 public:
   
@@ -839,25 +767,19 @@ public:
     mLexer = new Lexer() ;
     mHeadPtr = new TreeNode() ;
   } // Parser()
-  // Return true if no Syntax-error.
-  bool ReadSExp()
-  {
-    if ( mLexer->PeekToken() == NULL ) return false ;
-    else Parse_SEXPR() ;
 
-    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) {
-      while ( cin.peek() != '\n' ) cin.get() ;
-      cin.get() ; 
-      return false ;
-    } // if()
-    
-    else {
-      Start_BuildTree( mHeadPtr ) ;
-      SimplePrinter( mHeadPtr ) ;
-      // cout << mHeadPtr->ToString() << endl ;
-      return true ;
-    } // else
-  } // ReadSExp()
+  // Print vector
+  void PrintVector()
+  {
+    int j = mTokens.size() ;
+    if ( j == 0 ) return ;
+
+    cout << "Left element..." << endl ;
+    for ( int i = 0 ; i < j ; i ++ )
+    {
+      cout << mTokens.at( i ).ToString() << endl ;
+    } // for()
+  } // PrintVector()
 
   // Return the Vectoe which store tokens.
   vector<Token> GetTokensCopy()
@@ -871,14 +793,26 @@ public:
     return copy ;
   } // GetTokensCopy()
   
-  // Iterate vector and print the content. 
-  void PrintTokens()
+
+  // Return true if no Syntax-error.
+  bool ReadSExp()
   {
-    for ( int i = 0 ; i < mTokens.size() ; i++ )
-    {
-      cout << mTokens.at( i ).ToString() << endl ;
-    } // for
-  } // PrintTokens()
+    if ( mLexer->PeekToken() == NULL ) return false ;
+    else Parse_SEXPR() ;
+
+    if ( gSyntaxError || gStringNotColsedError || gEndOfFile ) {
+      while ( cin.peek() != '\n' ) cin.get() ;
+      cin.get() ; 
+      return false ;
+    } // if()
+
+    else {
+      Build_Tree( mHeadPtr, ROOT, false ) ;
+      SimplePrinter( mHeadPtr ) ;
+      // cout << mHeadPtr->ToString() << endl ;
+      return true ;
+    } // else
+  } // ReadSExp()
   
   // Reset Vector 
   void ResetTokenVector()
@@ -890,6 +824,7 @@ public:
   // Reset mLexer 
   void ResetLexer()
   {
+    delete mLexer ;
     mLexer = new Lexer() ;
     mLexer->AdjustCounter() ;
     return ;
@@ -923,7 +858,7 @@ int main()
     bool noSyntaxError = p->ReadSExp() ;
 
     if ( noSyntaxError ) { // S-Exp成立
-      p->PrintTokens() ;
+      p->PrintVector() ;
       cout << "> " ;
       p->ResetTokenVector() ;
       p->ResetLexer() ;
@@ -935,7 +870,7 @@ int main()
       gSyntaxError = false, gStringNotColsedError = false ;
       // Reset Parser
       delete p ;
-      Parser *p = new Parser() ;
+      p = new Parser() ;
       cout << "> " ;
     } // else
 
