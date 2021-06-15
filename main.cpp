@@ -563,12 +563,14 @@ private:
 
     // QUOTE
     else if ( thisToken.GetType() == QUOTE ) {
-      // 0.不能Erase掉current token
       // 1.head設定成QUOTE_ROOT_NODE
-      head->Set ( "", QUOTE_ROOT_NODE, INIT_TYPE ) ;
-      // 2.左右各跑一次 不需考慮DOT和RP
-      GoLeft( head->mLeft ) ;
+      head->Set ( "QOUTE_ROOT", QUOTE_ROOT_NODE, INIT_TYPE ) ;
+      // 2.左放QUOTE 進右邊
+      head->mLeft->Set ( "QUOTE", QUOTE_NODE, QUOTE ) ;
+      // 3. erase quote這個token
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
       GoRight( head->mRight, false ) ;
+      
       return ;
     } // else if()
 
@@ -671,11 +673,13 @@ private:
 
     // QUOTE
     else if ( cToken.GetType() == QUOTE ) {
-      // 0. erase掉token
+      // 1. current node設定成quote_root_node
+      cPtr->Set ( "QUOTE_ROOT", QUOTE_ROOT_NODE, INIT_TYPE ) ;
+      // 2. 左放quote 進右邊
+      cPtr->mLeft->Set ( "QUOTE", QUOTE_NODE, QUOTE ) ;
+      // 3. Erase掉QUOTE這個token 進右邊
       mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 1. current node設定成quote node
-      cPtr->Set ( "QUOTE", QUOTE_NODE, QUOTE ) ;
-      // 2. 直接return
+      GoRight( cPtr->mRight, false ) ;
       return ;
     } // else if()
 
@@ -792,7 +796,7 @@ public:
     } // if()
 
     else {
-      // Start_Build_Tree( mHeadPtr ) ;
+      Start_Build_Tree( mHeadPtr ) ;
       SimplePrinter( mHeadPtr ) ;
       // cout << mHeadPtr->ToString() << endl ;
       return true ;
