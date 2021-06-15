@@ -613,7 +613,7 @@ private:
     if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
       mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
       dot = true ;
-      head->Set( "(.", DOT_NODE, DOT ) ;
+      head->Set( "(.)", FULL_NODE, INIT_TYPE ) ;
     } // if()
     else if ( mTokens.empty() ) {
       cout << "Error when build tree(ROOT): Vector is empty when try to get DOT..." << endl ;
@@ -654,6 +654,89 @@ private:
 
   void GoLeft( TreeNode *cPtr )
   {
+    // 檢查錯誤
+    if ( cPtr == NULL || ! mTokens.empty() ) {
+      cout << "Error when build tree(left): Pointer is NULL or Vecotr is empty..." << endl ;
+      return ;
+    } // if()
+
+    // 取得第一個Token
+    Token cToken = mTokens.at( 0 ) ;
+
+    // 先擋掉錯誤的token
+    if ( cToken.GetType() == DOT || cToken.GetType() == RP ) {
+      cout << "Error when build tree(left): Get wrong token..." << endl ;
+      return ;
+    } // if()
+
+    // QUOTE
+    else if ( cToken.GetType() == QUOTE ) {
+      // 0. erase掉token
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1. current node設定成quote node
+      cPtr->Set ( "QUOTE", QUOTE_NODE, QUOTE ) ;
+      // 2. 直接return
+      return ;
+    } // else if()
+
+    // LEFT PAREN
+    else if ( cToken.GetType() == LP ) {
+      // 0. erase掉token
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1. 檢查是不是() 特殊case
+      if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
+        // 1.1 erase RP
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        cPtr->Set( "nil", ATOM_NODE, NIL ) ;
+        return ;
+      } // if()
+
+      // 2. 不是() 則設定成paren node
+      cPtr->Set( "(", PAREN_NODE, LP ) ;
+    } // else if()
+
+    // ATOM
+    else {
+      // 0. erase掉token
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1. current node設定成ATOM node
+      cPtr->Set ( cToken.GetText(), ATOM_NODE, cToken.GetType() ) ;
+      // 2. 直接return
+      return ;
+    } // else
+
+    /*
+      開始cToken是LP的遞迴
+     */
+    bool dot = false ;
+    // 0. 向左遞迴
+    GoLeft( cPtr->mLeft ) ;
+    // 1. 嘗試取得DOT
+    if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
+      // 1.1 erase DOT
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1.2 設定current為DOT
+      cPtr->Set( "(.", DOT_NODE, DOT ) ;
+      // 1.3 設定dot為true
+      dot = true ;
+    } // if()
+
+    // 2. 向右邊遞迴
+    GoRight( cPtr->mRight, dot ) ;
+    // 3. 取得RP 沒有的話就是錯誤
+    if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
+      // 3.1 erase RP
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 3.2 若dot是true 設為full
+      if ( dot )
+        cPtr->Set( "(.)", FULL_NODE, INIT_TYPE ) ;
+
+    } // if()
+
+    else
+      cout << "Error when build tree(left): Cant get RP..." << endl ;
+
+    return ;
 
   } // GoLeft()
 
