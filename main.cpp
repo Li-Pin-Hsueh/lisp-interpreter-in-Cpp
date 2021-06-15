@@ -13,14 +13,9 @@ bool gSyntaxError = false ;
 bool gEndOfFile = false ;
 string gErrorMessage = "" ;
 
-enum TraversalDirection
-{
-  LEFT, RIGHT, ROOT
-};
-
 enum NodeType
 {
-  INIT_NODE, ATOM_NODE, QUOTE_NODE, LP_NODE
+  INIT_NODE, PAREN_NODE, DOT_NODE, ATOM_NODE, QUOTE_NODE, QUOTE_ROOT_NODE, FULL_NODE
 };
 
 enum TokenType
@@ -156,7 +151,7 @@ private:
 public:
   TreeNode *mLeft ;
   TreeNode *mRight ;
-
+  // Basic constructure.
   TreeNode()
   {
     mContent = "" ;
@@ -166,43 +161,13 @@ public:
     mRight = NULL ;
   } // TreeNode()
 
-  TreeNode( NodeType nType, Token token )
-  {
-    mContent = token.GetText() ;
-    mNodeType = nType ;
-    mTokenType = token.GetType() ;
-    if ( nType == ATOM_NODE || nType == QUOTE_NODE ) {
-      mLeft = NULL ;
-      mRight = NULL ;
-    } // if()
-    else {
-      mLeft = new TreeNode() ;
-      mRight = new TreeNode() ;
-    } // else()
-  } // TreeNode()
-
-  void Set( NodeType nType, Token token )
-  {
-    mContent.assign( token.GetText() ) ;
-    mNodeType = nType ;
-    mTokenType = token.GetType() ;
-    if ( nType == ATOM_NODE || nType == QUOTE_NODE ) {
-      mLeft = NULL ;
-      mRight = NULL ;
-    } // if()
-    else {
-      mLeft = new TreeNode() ;
-      mRight = new TreeNode() ;
-    } // else()
-
-  } // Set()
-
-  void Set( string content, NodeType n, TokenType t, bool leaf )
+  // Only way to Set a TreeNode
+  void Set( string content, NodeType n, TokenType t )
   {
     mContent = content ;
     mNodeType = n ;
     mTokenType = t ;
-    if ( leaf ) {
+    if ( mNodeType == ATOM_NODE || mNodeType == QUOTE_NODE ) {
       mLeft = NULL ;
       mRight = NULL ;
     } // if()
@@ -223,22 +188,6 @@ public:
     return result ;
   } // ToString()
 
-  void ModifyContent( string s, NodeType nT, TokenType tT )
-  {
-    mContent = s ;
-    mNodeType = nT ;
-    mTokenType = tT ;
-    if ( nT == ATOM_NODE || nT == QUOTE_NODE ) {
-      mLeft = NULL ;
-      mRight = NULL ;
-    } // if()
-    else {
-      mLeft = new TreeNode() ;
-      mRight = new TreeNode() ;
-    } // else
-
-  } // ModifyContent()
-
 } ; // class TreeNode
 
 // ============================================== 
@@ -250,8 +199,6 @@ private:
   int mColCounter ;
   int mRowCounter ;
   Token *mCurrentToken ;
-
-  
   // Return true if the argument char is a Separator.
   bool IsSep( char c )
   {
@@ -593,172 +540,127 @@ private:
     
   } // Parse_SEXPR()
 
-  // Build a Tree-Like structure
-  void Build_Tree( TreeNode *current, TraversalDirection direction, bool previousDot )
+  // Entry of build tree function
+  void Start_Build_Tree( TreeNode *head )
   {
-    if ( current == NULL ) {
-      cout << "NULL" << endl ;
+    // 檢查錯誤
+    if ( head == NULL || mTokens.empty() ) {
+      cout << "Start build tree: Head pointer is NULL or Vector is empty..." << endl ;
       return ;
     } // if()
-    Token currentToken ;
-    bool currentDot = false ;
 
-    // Get current toke and DO NOT ERASE
-    if ( mTokens.empty() ) {
-      cout << "Error Build_Tree() : Vector is empty..." << endl ;
-      return ;
-    } // if()
-    currentToken = mTokens.at( 0 ) ;
+    // 取得第一個Token
+    Token thisToken = mTokens.at( 0 ) ;
 
-    /*
-      如果current token是LEFT_PAREN
+    /* 
+      開始建樹
+      不該出現的CASE寫在前面
       */
-    if ( currentToken.GetType() == LP )
-    {
-      // 先Erase目前的Token
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 檢查下一個Token是不是RP
-      // 如果是RP 形成一個ATOM
-      if ( mTokens.at( 0 ).GetType() == RP )
-      {
-        // 先把RP給erase()
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        // 將目前指向的Node設定為ATOM
-        current->ModifyContent( "()", ATOM_NODE, NIL ) ;
-        return ;
-      } // if()
-      
-      // 若為一般的LEFT_PAREN
-      // 左右邊一律將current設定為LP_NODE
-      current->Set( LP_NODE, currentToken ) ;
+    if ( thisToken.GetType() == DOT || thisToken.GetType() == RP ) {
+      cout << "Error when build tree(root): This case should not encounterred..." << endl ;
+      return ;
     } // if()
 
-    /*
-      如果current token是QUOTE
-      */
-    else if ( currentToken.GetType() == QUOTE )
-    {
-      // 遇到QUOTE current設定成INIT_NODE(空骨架)
-      // 直接設定左邊成新的QUOTE NODE
+    // QUOTE
+    else if ( thisToken.GetType() == QUOTE ) {
+      // 0.不能Erase掉current token
+      // 1.head設定成QUOTE_ROOT_NODE
+      head->Set ( "", QUOTE_ROOT_NODE, INIT_TYPE ) ;
+      // 2.左右各跑一次 不需考慮DOT和RP
+      GoLeft( head->mLeft ) ;
+      GoRight( head->mRight, false ) ;
+      return ;
+    } // else if()
+
+    // LP
+    else if ( thisToken.GetType() == LP ) {
+      // 0. 需要erase
       mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      current->ModifyContent( "", INIT_NODE, INIT_TYPE ) ;
-      current->mLeft = new TreeNode( QUOTE_NODE, currentToken ) ;
-      // 直接往右邊遞迴, 且dot一定是false( quote後面dot會error )
-      Build_Tree( current->mRight, RIGHT, false ) ;
-      return ;
-    } // else if()
-
-    /*
-      如果current token是DOT 這是一個不應該發生的case
-     */
-    else if ( currentToken.GetType() == DOT )
-    {
-      cout << "ERROR Build_Tree(): Current Token is DOT..." << endl ;
-      return ;
-    } // else if()
-
-    /*
-      如果current token是RP 只能在右邊方向發生
-     */
-    else if ( currentToken.GetType() == RP )
-    {
-      if ( direction == LEFT ) {
-        cout << "ERROR Build_Tree(): RP in left direction..." << endl ;
+      // 1. 檢查是不是()的特殊case
+      if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        // Head設定成ATOM for NIL
+        head->Set ( "nil", ATOM_NODE, NIL ) ;
         return ;
-      } // if()
-      // RP 長出NIL 不ERASE
-      current->ModifyContent( "nil", ATOM_NODE, NIL ) ;
-      return ;
+      } // if
+
+      // 2. pop掉vector的最後一個
+      if ( mTokens.at( mTokens.size() - 1 ).GetType() != RP ) {
+        cout << "Error when build tree(root): Last element in vector is not RP..." << endl ;
+        return ;
+      } // if
+      mTokens.pop_back() ;
+      // 3. Head設定成PAREN_NODE
+      head->Set ( "(", PAREN_NODE, LP ) ;
     } // else if()
 
-    /*
-      ATOM的狀況 分左右邊
-     */
-    else
-    {
-      if ( direction != RIGHT || previousDot )
-      {
-        // erase掉current token
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        current->Set( ATOM_NODE, currentToken ) ;
-        return ;
-      } // if()
-
-      // 沒有previous dot 形成空骨架 不erase
-      current->ModifyContent( "", INIT_NODE, INIT_TYPE ) ;
-      // 遞迴
-      Build_Tree( current->mLeft, LEFT, false ) ;
-      // 嘗試讀到DOT
-      currentDot = false ;
-      if ( mTokens.at( 0 ).GetType() == DOT )
-      {
-        // erase掉DOT
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        currentDot = true ;
-      } // if()
-      // 往右邊
-      Build_Tree( current->mRight, RIGHT, currentDot ) ;
-      // 處理DOT
-      if ( mTokens.size() > 0 && mTokens.at( 0 ).GetType() == DOT) {
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        TreeNode *newNode = new TreeNode() ;
-        newNode->ModifyContent( "", INIT_NODE, INIT_TYPE ) ;
-        newNode->mLeft = current->mRight ;
-        current->mRight = newNode ;
-        // 往右邊
-        Build_Tree( newNode->mRight, RIGHT, true ) ;
-      } // if ()
+    // ATOM
+    else {
+      // 0. 要erase()
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1. Head設定成ATOM_NODE
+      head->Set ( thisToken.GetText(), ATOM_NODE, thisToken.GetType() ) ;
       return ;
     } // else
 
-    // 一併遞迴
-    Build_Tree( current->mLeft, LEFT, false ) ;
-    // 嘗試讀到DOT
-    if ( mTokens.at( 0 ).GetType() == DOT )
-    {
-      // erase掉DOT
+    /*
+      開始Token為LP後的遞迴
+     */
+    bool dot = false ;
+    // 0. 左遞迴開始
+    GoLeft( head->mLeft ) ;
+    // 1. 左遞迴結束後 嘗試取得DOT
+    if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
       mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      currentDot = true ;
+      dot = true ;
+      head->Set( "(.", DOT_NODE, DOT ) ;
     } // if()
-    // 往右邊
-    Build_Tree( current->mRight, RIGHT, currentDot ) ;
-  
-    // 處理 "應該要有的RP"
-    if ( mTokens.at( 0 ).GetType() == RP )
-    {
-      // erase掉RP
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+    else if ( mTokens.empty() ) {
+      cout << "Error when build tree(ROOT): Vector is empty when try to get DOT..." << endl ;
       return ;
-    } // if()
-    else
-    {
-      // 沒有RP current->right要重接
+    } // else if()
+    else {
+      dot = false ;
+    } // else
+
+    // 2. 右遞迴開始
+    GoRight( head->mRight, dot ) ;
+
+    // 3. vector應該要變成空的
+    // 3.1 如果不是空的
+    while ( ! mTokens.empty() ) {
+
+      // 建立一個INT_NODE來重建右樹
       TreeNode *newNode = new TreeNode() ;
-      newNode->ModifyContent ( "", INIT_NODE, INIT_TYPE ) ;
-      // newNode的左邊設定成current的右邊
-      newNode->mLeft = current->mRight ;
-      // current的右邊設定成newNode
-      current->mRight = newNode ;
-      
-      currentDot = false ;
+      // 如果vec(0)是DOT newNode改成DOT_NODE
       if ( mTokens.at( 0 ).GetType() == DOT ) {
-        // erase掉DOT
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        currentDot = true ;
+        newNode->Set ( ".", DOT_NODE, DOT ) ;
+        // 重新連接
+        newNode->mLeft = head->mRight ;
+        head->mRight = newNode ;
+        GoRight( newNode->mRight, true ) ;
       } // if()
 
-      // Go right
-      Build_Tree( newNode->mRight, RIGHT, currentDot ) ;
-      if ( mTokens.at( 0 ).GetType() == RP )
-        // erase掉RP
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      else cout << "應該要有RP" << endl ;
-      return ;
-    } // else()
+      // 重新連接
+      newNode->mLeft = head->mRight ;
+      head->mRight = newNode ;
+      GoRight( newNode->mRight, false ) ;
+
+    } // while()
 
     return ;
 
-  } // Build_Tree()
+  } // Start_Build_Tree()
+
+  void GoLeft( TreeNode *cPtr )
+  {
+
+  } // GoLeft()
+
+  void GoRight( TreeNode *cPtr, bool previousDot )
+  {
+
+  } // GoRight()
 
 public:
   
@@ -807,7 +709,7 @@ public:
     } // if()
 
     else {
-      Build_Tree( mHeadPtr, ROOT, false ) ;
+      // Start_Build_Tree( mHeadPtr ) ;
       SimplePrinter( mHeadPtr ) ;
       // cout << mHeadPtr->ToString() << endl ;
       return true ;
