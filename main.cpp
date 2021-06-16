@@ -746,6 +746,42 @@ private:
 
   void GoRight( TreeNode *cPtr, bool previousDot )
   {
+    // TODO
+    
+    // 檢查有沒有NULL或Empty的錯誤
+    if ( cPtr == NULL || mTokens.empty() ) {
+      cout << "Error when build tree(RIGHT): Current is NULL or Vector is empty..." << endl ;
+      return ;
+    } // if()
+
+    // 取得第一個Token 要注意還沒erase
+    Token cToken = mTokens.at( 0 ) ;
+
+    // 先擋掉錯誤的case
+    if ( cToken.GetType() == DOT ) {
+
+    } // if()
+
+    // 如果是RP 要設定ATOM為NIL
+    else if ( cToken.GetType() == RP ) {
+      // 0. 不能Erase 因為RP要傳回去
+      // 1. 設定current node為ATOM node
+      // 2. 直接回傳
+    } // else if()
+
+    // 如果是LP
+    else if ( cToken.GetType() == LP ) {
+      // 0. 檢查是不是 () 的特殊狀況
+      // 0.1 是() 且previousDot為true
+      // 0.2 是() 且previousDot為false
+      // 1. 非() 設定為PAREN_NODE
+      // 1.1 Go left
+      // 1.2 嘗試取得DOT
+      // 1.3 Go Right
+      // 1.4 必須取得RP
+    } // else if()
+
+    // 如果是QUOTE
 
   } // GoRight()
 
