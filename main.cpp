@@ -13,9 +13,10 @@ bool gSyntaxError = false ;
 bool gEndOfFile = false ;
 string gErrorMessage = "" ;
 
+// 只有ATOM_NODE是LEAF NODE
 enum NodeType
 {
-  INIT_NODE, PAREN_NODE, DOT_NODE, ATOM_NODE, QUOTE_NODE, QUOTE_ROOT_NODE, FULL_NODE
+  INIT_NODE, ATOM_NODE, QUOTE_ROOT_NODE, DOT_NODE
 };
 
 enum TokenType
@@ -151,7 +152,10 @@ private:
 public:
   TreeNode *mLeft ;
   TreeNode *mRight ;
-  // Basic constructure.
+  /*
+    node type = init, token type = init,
+    mLeft = new TreeNode(), mRight = new TreeNode()
+   */
   TreeNode()
   {
     mContent = "" ;
@@ -161,20 +165,37 @@ public:
     mRight = NULL ;
   } // TreeNode()
 
+  void Init()
+  {
+    mContent = "" ;
+    mNodeType = INIT_NODE ;
+    mTokenType = INIT_TYPE ;
+    mLeft = new TreeNode() ;
+    mRight = new TreeNode() ;
+  } // Init()
+
+  void SetDotNode( )
+  {
+    mContent = "DOT_NODE" ;
+    mNodeType = DOT_NODE ;
+    mTokenType = DOT ;
+  }
   // Only way to Set a TreeNode
+  // Automatically sets leaf's left and right nodes to NULL.
   void Set( string content, NodeType n, TokenType t )
   {
     mContent = content ;
     mNodeType = n ;
     mTokenType = t ;
-    if ( mNodeType == ATOM_NODE || mNodeType == QUOTE_NODE ) {
+    if ( mNodeType == ATOM_NODE ) {
       mLeft = NULL ;
       mRight = NULL ;
     } // if()
-    else {
-      mLeft = new TreeNode() ;
-      mRight = new TreeNode() ;
+    else if ( mNodeType == QUOTE_ROOT_NODE ) {
+      mLeft = NULL ;
     } // else()
+    
+
   } // Set()
 
   string ToString()
@@ -540,250 +561,123 @@ private:
     
   } // Parse_SEXPR()
 
-  // Entry of build tree function
-  void Start_Build_Tree( TreeNode *head )
+  // Recursivly build tree
+  /*
+    用單一的函式一併處理左右邊的遞迴
+    一個新的NODE一律先長出兩邊的"骨架"
+    共有三種NODE TYPE
+    INIT_NODE, ATOM_NODE, QUOTE_NODE
+   */
+  void Build_SEXPR( TreeNode *current, bool settable )
   {
-    // 檢查錯誤
-    if ( head == NULL || mTokens.empty() ) {
-      cout << "Start build tree: Head pointer is NULL or Vector is empty..." << endl ;
+    // 檢查current是否為NULL
+    if ( current == NULL ) {
+      cout << "DEBUG ERROR: Current node is NULL..." << endl ;
       return ;
     } // if()
-
-    // 取得第一個Token
-    Token thisToken = mTokens.at( 0 ) ;
-
-    /* 
-      開始建樹
-      不該出現的CASE寫在前面
-      */
-    if ( thisToken.GetType() == DOT || thisToken.GetType() == RP ) {
-      cout << "Error when build tree(root): This case should not encounterred..." << endl ;
-      return ;
-    } // if()
-
-    // QUOTE
-    else if ( thisToken.GetType() == QUOTE ) {
-      // 1.head設定成QUOTE_ROOT_NODE
-      head->Set ( "QOUTE_ROOT", QUOTE_ROOT_NODE, INIT_TYPE ) ;
-      // 2.左放QUOTE 進右邊
-      head->mLeft->Set ( "QUOTE", QUOTE_NODE, QUOTE ) ;
-      // 3. erase quote這個token
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      GoRight( head->mRight, false ) ;
-      
-      return ;
-    } // else if()
-
-    // LP
-    else if ( thisToken.GetType() == LP ) {
-      // 0. 需要erase
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 1. 檢查是不是()的特殊case
-      if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        // Head設定成ATOM for NIL
-        head->Set ( "nil", ATOM_NODE, NIL ) ;
-        return ;
-      } // if
-
-      // 2. pop掉vector的最後一個
-      if ( mTokens.at( mTokens.size() - 1 ).GetType() != RP ) {
-        cout << "Error when build tree(root): Last element in vector is not RP..." << endl ;
-        return ;
-      } // if
-      mTokens.pop_back() ;
-      // 3. Head設定成PAREN_NODE
-      head->Set ( "(", PAREN_NODE, LP ) ;
-    } // else if()
-
-    // ATOM
     else {
-      // 0. 要erase()
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 1. Head設定成ATOM_NODE
-      head->Set ( thisToken.GetText(), ATOM_NODE, thisToken.GetType() ) ;
-      return ;
+      current->Init() ;
     } // else
-
-    /*
-      開始Token為LP後的遞迴
-     */
-    bool dot = false ;
-    // 0. 左遞迴開始
-    GoLeft( head->mLeft ) ;
-    // 1. 左遞迴結束後 嘗試取得DOT
-    if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      dot = true ;
-      head->Set( "(.)", FULL_NODE, INIT_TYPE ) ;
-    } // if()
-    else if ( mTokens.empty() ) {
-      cout << "Error when build tree(ROOT): Vector is empty when try to get DOT..." << endl ;
-      return ;
-    } // else if()
-    else {
-      dot = false ;
-    } // else
-
-    // 2. 右遞迴開始
-    GoRight( head->mRight, dot ) ;
-
-    // 3. vector應該要變成空的
-    // 3.1 如果不是空的
-    while ( ! mTokens.empty() ) {
-
-      // 建立一個INT_NODE來重建右樹
-      TreeNode *newNode = new TreeNode() ;
-      // 如果vec(0)是DOT newNode改成DOT_NODE
-      if ( mTokens.at( 0 ).GetType() == DOT ) {
-        newNode->Set ( ".", DOT_NODE, DOT ) ;
-        // 重新連接
-        newNode->mLeft = head->mRight ;
-        head->mRight = newNode ;
-        GoRight( newNode->mRight, true ) ;
-      } // if()
-
-      // 重新連接
-      newNode->mLeft = head->mRight ;
-      head->mRight = newNode ;
-      GoRight( newNode->mRight, false ) ;
-
-    } // while()
-
-    return ;
-
-  } // Start_Build_Tree()
-
-  void GoLeft( TreeNode *cPtr )
-  {
-    // 檢查錯誤
-    if ( cPtr == NULL || ! mTokens.empty() ) {
-      cout << "Error when build tree(left): Pointer is NULL or Vecotr is empty..." << endl ;
-      return ;
-    } // if()
-
-    // 取得第一個Token
-    Token cToken = mTokens.at( 0 ) ;
-
-    // 先擋掉錯誤的token
-    if ( cToken.GetType() == DOT || cToken.GetType() == RP ) {
-      cout << "Error when build tree(left): Get wrong token..." << endl ;
-      return ;
-    } // if()
-
-    // QUOTE
-    else if ( cToken.GetType() == QUOTE ) {
-      // 1. current node設定成quote_root_node
-      cPtr->Set ( "QUOTE_ROOT", QUOTE_ROOT_NODE, INIT_TYPE ) ;
-      // 2. 左放quote 進右邊
-      cPtr->mLeft->Set ( "QUOTE", QUOTE_NODE, QUOTE ) ;
-      // 3. Erase掉QUOTE這個token 進右邊
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      GoRight( cPtr->mRight, false ) ;
-      return ;
-    } // else if()
-
-    // LEFT PAREN
-    else if ( cToken.GetType() == LP ) {
-      // 0. erase掉token
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 1. 檢查是不是() 特殊case
-      if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
-        // 1.1 erase RP
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        cPtr->Set( "nil", ATOM_NODE, NIL ) ;
-        return ;
-      } // if()
-
-      // 2. 不是() 則設定成paren node
-      cPtr->Set( "(", PAREN_NODE, LP ) ;
-    } // else if()
-
-    // ATOM
-    else {
-      // 0. erase掉token
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 1. current node設定成ATOM node
-      cPtr->Set ( cToken.GetText(), ATOM_NODE, cToken.GetType() ) ;
-      // 2. 直接return
-      return ;
-    } // else
-
-    /*
-      開始cToken是LP的遞迴
-     */
-    bool dot = false ;
-    // 0. 向左遞迴
-    GoLeft( cPtr->mLeft ) ;
-    // 1. 嘗試取得DOT
-    if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
-      // 1.1 erase DOT
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 1.2 設定current為DOT
-      cPtr->Set( "(.", DOT_NODE, DOT ) ;
-      // 1.3 設定dot為true
-      dot = true ;
-    } // if()
-
-    // 2. 向右邊遞迴
-    GoRight( cPtr->mRight, dot ) ;
-    // 3. 取得RP 沒有的話就是錯誤
-    if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
-      // 3.1 erase RP
-      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      // 3.2 若dot是true 設為full
-      if ( dot )
-        cPtr->Set( "(.)", FULL_NODE, INIT_TYPE ) ;
-
-    } // if()
-
-    else
-      cout << "Error when build tree(left): Cant get RP..." << endl ;
-
-    return ;
-
-  } // GoLeft()
-
-  void GoRight( TreeNode *cPtr, bool previousDot )
-  {
-    // TODO
     
-    // 檢查有沒有NULL或Empty的錯誤
-    if ( cPtr == NULL || mTokens.empty() ) {
-      cout << "Error when build tree(RIGHT): Current is NULL or Vector is empty..." << endl ;
+    if ( mTokens.empty() ) {
+      cout << "DEBUG ERROR: Vector is empty..." << endl ;
       return ;
     } // if()
 
-    // 取得第一個Token 要注意還沒erase
-    Token cToken = mTokens.at( 0 ) ;
+    // 取得第一個TOKEN
+    Token currentToken = mTokens.at( 0 ) ;
 
-    // 先擋掉錯誤的case
-    if ( cToken.GetType() == DOT ) {
-
+    /*
+      如果settable是false 代表此node一定是骨架
+      但若current token為RP 要設nil atom
+     */
+    if ( ! settable && currentToken.GetType() != RP ) {
+      // 0. 不嘗試取得LP 直接進left 左邊一律是settable
+      Build_SEXPR( current->mLeft, true ) ;
+      // 1. 嘗試取得DOT
+      bool dot = false ;
+      if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
+        dot = true ;
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        current->SetDotNode() ;
+      } // if()
+      // 2. 進right 
+      Build_SEXPR( current->mRight, dot ) ;
+      return ;
     } // if()
 
-    // 如果是RP 要設定ATOM為NIL
-    else if ( cToken.GetType() == RP ) {
-      // 0. 不能Erase 因為RP要傳回去
-      // 1. 設定current node為ATOM node
-      // 2. 直接回傳
+    // not settable但是RP 要設定nil
+    if ( ! settable && currentToken.GetType() == RP )
+    {
+      current->Set( "nil", ATOM_NODE, NIL ) ;
+      return ;
+    }
+
+    /*
+      Settable的node 要看能不能設定成atom或quote
+     */
+
+    // 特殊case: () ===> NIL
+    if ( currentToken.GetType() == LP && mTokens.at( 1 ).GetType() == RP ) {
+      // 一次erase掉LP和RP
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 2 ) ;
+      // 設定成ATOM
+      current->Set( "nil", ATOM_NODE, NIL ) ;
+      return ;
+    } // if
+
+    // Regular SEXP
+    else if ( currentToken.GetType() == LP ) {
+      // 0. erase掉LP
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1. 往左邊走
+      Build_SEXPR( current->mLeft, true ) ;
+      // 2. 取得DOT
+      bool dot = false ;
+      if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        dot = true ;
+        current->SetDotNode() ;
+      } // if()
+      // 3. 往右走
+      Build_SEXPR( current->mRight, dot ) ;
+      // 4.取得RP
+      if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      } // if()
+      else  cout << "Can't get RP..." << endl ;
+      return ;
+
     } // else if()
 
-    // 如果是LP
-    else if ( cToken.GetType() == LP ) {
-      // 0. 檢查是不是 () 的特殊狀況
-      // 0.1 是() 且previousDot為true
-      // 0.2 是() 且previousDot為false
-      // 1. 非() 設定為PAREN_NODE
-      // 1.1 Go left
-      // 1.2 嘗試取得DOT
-      // 1.3 Go Right
-      // 1.4 必須取得RP
+    // settable QUOTE
+    else if ( currentToken.GetType() == QUOTE ) {
+      // 0. erase QUOTE token
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1. current設定成quote root 左邊會是NULL
+      current->Set( "QUOTE ROOT", QUOTE_ROOT_NODE, QUOTE ) ;
+      // 2.直接進右邊 always settable
+      bool quoteFlag = true ;
+      Build_SEXPR( current->mRight, quoteFlag ) ;
+      return ;
+
     } // else if()
 
-    // 如果是QUOTE
+    // settable ATOM
+    else {
+      // 0. erase Token
+      mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      // 1. current設定為ATOM
+      current->Set( currentToken.GetText(), ATOM_NODE, currentToken.GetType() ) ;
+      return ;
 
-  } // GoRight()
+    } // else
+
+    cout << "DEBUG ERROR: Unknow case..." << endl ;
+    cout << currentToken.ToString() << endl ;
+    return ; 
+
+  } // Build_SEXPR
 
 public:
   
@@ -791,6 +685,7 @@ public:
   {
     mLexer = new Lexer() ;
     mHeadPtr = new TreeNode() ;
+    mHeadPtr->Init() ;
   } // Parser()
 
   // Print vector
@@ -832,7 +727,7 @@ public:
     } // if()
 
     else {
-      Start_Build_Tree( mHeadPtr ) ;
+      Build_SEXPR( mHeadPtr, true ) ;
       SimplePrinter( mHeadPtr ) ;
       // cout << mHeadPtr->ToString() << endl ;
       return true ;
