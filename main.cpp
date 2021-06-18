@@ -16,7 +16,7 @@ string gErrorMessage = "" ;
 // 只有ATOM_NODE是LEAF NODE
 enum NodeType
 {
-  INIT_NODE, ATOM_NODE, QUOTE_ROOT_NODE, DOT_NODE
+  INIT_NODE, ATOM_NODE, QUOTE_ROOT_NODE, DOT_NODE, PAREN_NODE, FULL_NODE
 };
 
 enum TokenType
@@ -174,12 +174,31 @@ public:
     mRight = new TreeNode() ;
   } // Init()
 
+  NodeType GetNodeType()
+  {
+    return mNodeType ;
+  } // GetNodeType()
+
+  void SetParenNode()
+  {
+    mContent = "PAREN_NODE" ;
+    mNodeType = PAREN_NODE ;
+    mTokenType = INIT_TYPE ;
+  } // SetParenNode()
+
+  void SetFullNode()
+  {
+    mContent = "FULL_NODE" ;
+    mNodeType = FULL_NODE ;
+    mTokenType = INIT_TYPE ;
+  } // SetFullNode()
+
   void SetDotNode( )
   {
     mContent = "DOT_NODE" ;
     mNodeType = DOT_NODE ;
     mTokenType = DOT ;
-  }
+  } // SetDotNode()
   // Only way to Set a TreeNode
   // Automatically sets leaf's left and right nodes to NULL.
   void Set( string content, NodeType n, TokenType t )
@@ -628,8 +647,9 @@ private:
 
     // Regular SEXP
     else if ( currentToken.GetType() == LP ) {
-      // 0. erase掉LP
+      // 0. erase掉LP current設為PAREN_NODE
       mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+      current->SetParenNode() ;
       // 1. 往左邊走
       Build_SEXPR( current->mLeft, true ) ;
       // 2. 取得DOT
@@ -644,6 +664,9 @@ private:
       // 4.取得RP
       if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
         mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
+        // DOT NODE 讀到RP 升級為FULL_NODE
+        if ( current->GetNodeType() == DOT_NODE )
+          current->SetFullNode() ;
       } // if()
       else  cout << "Can't get RP..." << endl ;
       return ;
