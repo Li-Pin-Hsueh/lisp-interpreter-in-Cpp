@@ -174,6 +174,11 @@ public:
     mRight = new TreeNode() ;
   } // Init()
 
+  string GetNodeContent()
+  {
+    return mContent ;
+  } // GetNodeContent()
+
   NodeType GetNodeType()
   {
     return mNodeType ;
@@ -702,6 +707,26 @@ private:
 
   } // Build_SEXPR
 
+  void Recursive_Printer( TreeNode *current, int nSpaces )
+  {
+   // TODO
+
+  } // Recursive_Printer()
+
+  bool CheckExit()
+  {
+    if ( mTokens.size() != 3 )
+      return false ;
+    
+    if ( mTokens.at( 0 ).GetType() == LP &&
+         mTokens.at( 1 ).GetText() == "exit" &&
+         mTokens.at( 2 ).GetType() == RP )
+      return true ;
+
+    return false ;
+  } // CheckExit()
+
+
 public:
   
   Parser()
@@ -749,12 +774,15 @@ public:
       return false ;
     } // if()
 
-    else {
-      Build_SEXPR( mHeadPtr, true ) ;
-      SimplePrinter( mHeadPtr ) ;
-      // cout << mHeadPtr->ToString() << endl ;
-      return true ;
-    } // else
+    gExitFlag = CheckExit() ;
+    if ( gExitFlag )  return true ;
+
+    Build_SEXPR( mHeadPtr, true ) ;
+    // gExitFlag = CheckExit( mHeadPtr ) ;
+    // SimplePrinter( mHeadPtr ) ;
+    // cout << mHeadPtr->ToString() << endl ;
+    return true ;
+
   } // ReadSExp()
   
   // Reset Vector 
@@ -785,6 +813,12 @@ public:
     SimplePrinter( currentPtr->mRight ) ;
   } // SimplePrinter()
 
+  void PrettyPrint()
+  {
+    Recursive_Printer( mHeadPtr, 0 ) ;
+    return ;
+  } // PrettyPrint()
+
 }; // class Parser
 
 // ============================================== 
@@ -800,12 +834,16 @@ int main()
   {
     bool noSyntaxError = p->ReadSExp() ;
 
-    if ( noSyntaxError ) { // S-Exp成立
-      p->PrintVector() ;
+    if ( noSyntaxError && !gExitFlag ) { // S-Exp成立
+      // p->PrintVector() ;
+      // p->PrettyPrint() ;
       cout << "> " ;
       p->ResetTokenVector() ;
       p->ResetLexer() ;
     } // if()
+    else if ( gExitFlag ) {
+      ;
+    } // else if()
     else {
       // Print error message.
       cout << gErrorMessage << endl ;
