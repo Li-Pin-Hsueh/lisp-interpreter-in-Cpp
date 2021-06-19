@@ -16,7 +16,7 @@ string gErrorMessage = "" ;
 // 只有ATOM_NODE是LEAF NODE
 enum NodeType
 {
-  INIT_NODE, ATOM_NODE, QUOTE_ROOT_NODE, DOT_NODE, PAREN_NODE, FULL_NODE
+  INIT_NODE, ATOM_NODE, QUOTE_ROOT_NODE
 };
 
 enum TokenType
@@ -184,26 +184,6 @@ public:
     return mNodeType ;
   } // GetNodeType()
 
-  void SetParenNode()
-  {
-    mContent = "PAREN_NODE" ;
-    mNodeType = PAREN_NODE ;
-    mTokenType = INIT_TYPE ;
-  } // SetParenNode()
-
-  void SetFullNode()
-  {
-    mContent = "FULL_NODE" ;
-    mNodeType = FULL_NODE ;
-    mTokenType = INIT_TYPE ;
-  } // SetFullNode()
-
-  void SetDotNode( )
-  {
-    mContent = "DOT_NODE" ;
-    mNodeType = DOT_NODE ;
-    mTokenType = DOT ;
-  } // SetDotNode()
   // Only way to Set a TreeNode
   // Automatically sets leaf's left and right nodes to NULL.
   void Set( string content, NodeType n, TokenType t )
@@ -623,7 +603,6 @@ private:
       if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
         dot = true ;
         mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        current->SetDotNode() ;
       } // if()
       // 2. 進right 
       Build_SEXPR( current->mRight, dot ) ;
@@ -652,9 +631,8 @@ private:
 
     // Regular SEXP
     else if ( currentToken.GetType() == LP ) {
-      // 0. erase掉LP current設為PAREN_NODE
+      // 0. erase掉LP current設為SEXPR_NODE
       mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-      current->SetParenNode() ;
       // 1. 往左邊走
       Build_SEXPR( current->mLeft, true ) ;
       // 2. 取得DOT
@@ -662,16 +640,12 @@ private:
       if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == DOT ) {
         mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
         dot = true ;
-        current->SetDotNode() ;
       } // if()
       // 3. 往右走
       Build_SEXPR( current->mRight, dot ) ;
       // 4.取得RP
       if ( ! mTokens.empty() && mTokens.at( 0 ).GetType() == RP ) {
         mTokens.erase( mTokens.begin(), mTokens.begin() + 1 ) ;
-        // DOT NODE 讀到RP 升級為FULL_NODE
-        if ( current->GetNodeType() == DOT_NODE )
-          current->SetFullNode() ;
       } // if()
       else  cout << "Can't get RP..." << endl ;
       return ;
@@ -707,9 +681,70 @@ private:
 
   } // Build_SEXPR
 
-  void Recursive_Printer( TreeNode *current, int nSpaces )
+  void Recursive_Printer( TreeNode *current, bool printable, int nSpaces )
   {
-   // TODO
+    // TODO
+    string str_spaces = "" ;
+    for ( int i = 0 ; i < nSpaces ; i ++ ) {
+      str_spaces += " " ;
+    } // for()
+
+    bool printDOT = false ;
+    if ( current->GetNodeType() == INIT_NODE &&
+         current->mRight->GetNodeType() == ATOM_NODE ) {
+      if ( current->mRight->GetNodeContent() != "nil" )
+        printDOT = true ;
+    } // if()
+
+    // Printable決定nil要不要印
+    if ( ! printable && current->GetNodeType() == ATOM_NODE )
+      return ;
+    if ( printable && current->GetNodeType() == ATOM_NODE ) {
+      cout << current->GetNodeContent() << endl ;
+      // 後續要處理ATOM的format
+
+    } // if()
+
+    else if ( current->GetNodeType() == QUOTE_ROOT_NODE ) {
+      // TODO
+      cout << "( quote" << endl ;
+      cout << str_spaces << "  " ;
+      Recursive_Printer( current->mRight, true, nSpaces+2 ) ;
+      cout << str_spaces << ")" << endl ;
+    } // else if()
+
+    else if ( printable && current->GetNodeType() == INIT_NODE ) {
+      
+      cout << "( " ;
+      Recursive_Printer( current->mLeft, true, nSpaces+2 ) ;
+      if ( printDOT ) {
+        cout << str_spaces << "  " ;
+        cout << "." << endl ;
+        cout << str_spaces << "  " ;
+        Recursive_Printer( current->mRight, true, nSpaces+2 ) ;
+      } // if()
+      else
+        Recursive_Printer( current->mRight, false, nSpaces ) ;
+      
+      cout << str_spaces << ")" << endl ;
+
+    } // else if()
+
+    else {
+      cout << str_spaces << "  " ;
+      Recursive_Printer( current->mLeft, true, nSpaces+2 ) ;
+      if ( printDOT ) {
+        cout << str_spaces << "  ";
+        cout << "." << endl ;
+        cout << str_spaces << "  ";
+        Recursive_Printer( current->mRight, true, nSpaces+2 ) ;
+      } // if()
+      else {
+        Recursive_Printer( current->mRight, false, nSpaces ) ;
+      } // else()
+    } // else
+
+    return ;
 
   } // Recursive_Printer()
 
@@ -815,7 +850,7 @@ public:
 
   void PrettyPrint()
   {
-    Recursive_Printer( mHeadPtr, 0 ) ;
+    Recursive_Printer( mHeadPtr, true, 0 ) ;
     return ;
   } // PrettyPrint()
 
@@ -836,7 +871,7 @@ int main()
 
     if ( noSyntaxError && !gExitFlag ) { // S-Exp成立
       // p->PrintVector() ;
-      // p->PrettyPrint() ;
+      p->PrettyPrint() ;
       cout << "> " ;
       p->ResetTokenVector() ;
       p->ResetLexer() ;
