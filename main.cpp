@@ -3,6 +3,9 @@
 # include <sstream>
 # include <ctype.h>
 # include <vector>
+# include <stdlib.h>
+# include <stdio.h>
+# include <cstring>
 using namespace std;
 
 // ============================================== 
@@ -36,6 +39,10 @@ private:
   {
     int i = 0 ;
     int k = s.length() ;
+    // char char_array [ k + 1 ] ;
+    // strcpy( char_array, s.c_str() ) ;
+    // int i = atof(char_array) ;
+    
     while ( i < k )
     {
       char c = s.at( i ) ;
@@ -61,7 +68,12 @@ private:
         return false ; 
       } // if()
 
-      if ( c == '.' ) dot = true ;
+      if ( c == '.' ) {
+        dot = true ;
+        if ( ( s.at( 0 ) == '+' || s.at( 0 ) == '-' )
+             && i == k - 1 && i == 1 ) return false ;
+      } // if()
+
       i ++ ;
     } // while()
 
@@ -155,7 +167,7 @@ public:
   /*
     node type = init, token type = init,
     mLeft = new TreeNode(), mRight = new TreeNode()
-   */
+  */
   TreeNode()
   {
     mContent = "" ;
@@ -176,8 +188,19 @@ public:
 
   string GetNodeContent()
   {
+    if ( mTokenType == NIL )
+      mContent = "nil" ;
+    else if ( mTokenType == T )
+      mContent = "#t" ;
+
+    // todo : deal with int format 
     return mContent ;
   } // GetNodeContent()
+
+  TokenType GetTokenType()
+  {
+    return mTokenType ;
+  } // GetTokenType()
 
   NodeType GetNodeType()
   {
@@ -197,7 +220,7 @@ public:
     } // if()
     else if ( mNodeType == QUOTE_ROOT_NODE ) {
       mLeft = NULL ;
-    } // else()
+    } // else if()
     
 
   } // Set()
@@ -571,7 +594,8 @@ private:
     一個新的NODE一律先長出兩邊的"骨架"
     共有三種NODE TYPE
     INIT_NODE, ATOM_NODE, QUOTE_NODE
-   */
+  */
+
   void Build_SEXPR( TreeNode *current, bool settable )
   {
     // 檢查current是否為NULL
@@ -594,7 +618,7 @@ private:
     /*
       如果settable是false 代表此node一定是骨架
       但若current token為RP 要設nil atom
-     */
+    */
     if ( ! settable && currentToken.GetType() != RP ) {
       // 0. 不嘗試取得LP 直接進left 左邊一律是settable
       Build_SEXPR( current->mLeft, true ) ;
@@ -614,13 +638,14 @@ private:
     {
       current->Set( "nil", ATOM_NODE, NIL ) ;
       return ;
-    }
+    } // if()
 
     /*
       Settable的node 要看能不能設定成atom或quote
-     */
+    */
 
     // 特殊case: () ===> NIL
+    
     if ( currentToken.GetType() == LP && mTokens.at( 1 ).GetType() == RP ) {
       // 一次erase掉LP和RP
       mTokens.erase( mTokens.begin(), mTokens.begin() + 2 ) ;
@@ -679,7 +704,7 @@ private:
     cout << currentToken.ToString() << endl ;
     return ; 
 
-  } // Build_SEXPR
+  } // Build_SEXPR()
 
   void Recursive_Printer( TreeNode *current, bool printable, int nSpaces )
   {
@@ -692,7 +717,7 @@ private:
     bool printDOT = false ;
     if ( current->GetNodeType() == INIT_NODE &&
          current->mRight->GetNodeType() == ATOM_NODE ) {
-      if ( current->mRight->GetNodeContent() != "nil" )
+      if ( current->mRight->GetTokenType() != NIL )
         printDOT = true ;
     } // if()
 
@@ -700,7 +725,23 @@ private:
     if ( ! printable && current->GetNodeType() == ATOM_NODE )
       return ;
     if ( printable && current->GetNodeType() == ATOM_NODE ) {
-      cout << current->GetNodeContent() << endl ;
+      string str = current->GetNodeContent() ;
+      if ( current->GetTokenType() == INT ) {
+        int n = current->GetNodeContent().size() + 1 ;
+        char char_array[ n ] ;
+        strcpy( char_array, str.c_str() ) ;
+        int i = atoi( char_array ) ;
+        cout << i << endl ;
+      } // if()
+      else if ( current->GetTokenType() == FLOAT ) {
+        int n = current->GetNodeContent().size() + 1 ;
+        char char_array[ n ] ;
+        strcpy( char_array, str.c_str() ) ;
+        float i = atof( char_array ) ;
+        printf( "%.3f\n", i ) ;
+      } // else if()
+      else
+        cout << str << endl ;
       // 後續要處理ATOM的format
 
     } // if()
@@ -861,10 +902,13 @@ public:
 
 int main()
 {
+  // 讀掉題號
+  int uNumber = cin.get() ;
+  cin.get() ;
 
   Parser *p = new Parser() ;
   cout << "Welcome to OurScheme!\n" ;
-  cout << "> " ;
+  cout << endl << "> " ;
   while ( !gExitFlag && !gEndOfFile )
   {
     bool noSyntaxError = p->ReadSExp() ;
@@ -872,14 +916,14 @@ int main()
     if ( noSyntaxError && !gExitFlag ) { // S-Exp成立
       // p->PrintVector() ;
       p->PrettyPrint() ;
-      cout << "> " ;
+      cout << endl << "> " ;
       p->ResetTokenVector() ;
       p->ResetLexer() ;
     } // if()
     else if ( gExitFlag ) {
       ;
     } // else if()
-    else {
+    else if ( gSyntaxError || gStringNotColsedError ) {
       // Print error message.
       cout << gErrorMessage << endl ;
       // Reset error flag.
@@ -887,13 +931,13 @@ int main()
       // Reset Parser
       delete p ;
       p = new Parser() ;
-      cout << "> " ;
-    } // else
+      cout << endl << "> "  ;
+    } // else if()
 
   } // while()
 
   if ( gEndOfFile )
-    cout << "Error (no more input) : END-OF-FILE encountered" << endl ;
+    cout << "ERROR (no more input) : END-OF-FILE encountered" << endl ;
 
   cout << endl << "Thanks for using OurScheme!" << endl ;
 } // main()
