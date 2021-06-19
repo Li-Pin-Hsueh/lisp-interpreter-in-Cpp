@@ -320,7 +320,7 @@ private:
       s1 << mRowCounter, s2 << mColCounter + 1 ;
       gStringNotColsedError = true ;
       gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at Line " + s1.str() +
-                      ", Column " + s2.str() ;
+                      " Column " + s2.str() ;
       
       ResetCounter() ;
 
@@ -750,8 +750,10 @@ private:
       // TODO
       cout << "( quote" << endl ;
       cout << str_spaces << "  " ;
+      
       Recursive_Printer( current->mRight, true, nSpaces+2 ) ;
       cout << str_spaces << ")" << endl ;
+         
     } // else if()
 
     else if ( printable && current->GetNodeType() == INIT_NODE ) {
@@ -937,7 +939,7 @@ int main()
   } // while()
 
   if ( gEndOfFile )
-    cout << "ERROR (no more input) : END-OF-FILE encountered" << endl ;
+    cout << "ERROR (no more input) : END-OF-FILE encountered"  ;
 
   cout << endl << "Thanks for using OurScheme!" << endl ;
 } // main()
