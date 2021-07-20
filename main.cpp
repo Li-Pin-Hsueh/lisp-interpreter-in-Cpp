@@ -4,7 +4,6 @@
 # include <sstream>
 # include <ctype.h>
 
-
 using namespace std ;
 
 // ===列舉、結構區===
@@ -69,8 +68,12 @@ public:
   } // GetPosInfoAsString()
 
 }; // class Token
+// =====TreeNode Class=====
+class TreeNode {
 
-// Lexer class
+}; // class TreeNode
+
+// =====Lexer Class=====
 class Lexer {
 
 private:
@@ -265,7 +268,11 @@ public:
     } // while()
 
     // 2.1 如果該非spaces是EOF則回傳NULL
-    if ( cin.peek() == -1 ) return NULL ;
+    if ( cin.peek() == -1 ) { 
+      gEndOfFileFlag = true ;
+      return NULL ;
+    } // if()
+
     // 2.2 如果該非spaces是SEPARATOR
     if ( IsSep( cin.peek() ) ) {
       // '(' or ')' or single-quite
@@ -325,20 +332,10 @@ public:
 
 }; // class Lexer
 
-// =====Lexer Class=====
-
 // =====Parser Class=====
 
-// =======主程式=======
-
-// int main()
-// {
-//   cout << "Welecome!" << endl ;
-
-// } // main()
-
 // =======測試程式-Lexer=======
-int main() {
+int TestBench1() {
   Lexer* lx = new Lexer() ;
   Token* token = new Token() ;
   bool end = false ;
@@ -356,5 +353,18 @@ int main() {
       cout << endl << token->ToString() << endl ;
 
   } // while()
+
+  cout << "End of Test Bench 1 ..." << endl ;
+  return 0 ;
+} // TestBench1()
+
+// =======主程式=======
+
+int main()
+{
+  cout << "Welecome!" << endl ;
+  // test bench 1
+  TestBench1() ;
+
 } // main()
 
