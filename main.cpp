@@ -3,17 +3,24 @@
 # include <string>
 # include <sstream>
 # include <ctype.h>
+# include <vector>
 
 using namespace std ;
 
 // ===列舉、結構區===
-string gTokenTypeMap[] = { "LP", "RP", "INT", "FLOAT", "STRING", "DOT",
+string gTokenTypeMap[] = { "INIT_TYPE", "LP", "RP", "INT", "FLOAT", "STRING", "DOT",
                            "NIL", "T", "QUOTE", "SYMBOL" } ;
 enum TokenType
 {
-  LP, RP, INT, FLOAT, STRING, DOT, NIL, T, QUOTE, SYMBOL
+  INIT_TYPE, LP, RP, INT, FLOAT, STRING, DOT, NIL, T, QUOTE, SYMBOL
 };
 
+// TODO
+string gNodeTypeMap[] = { "INIT", "SEXP", "ATOM" } ;
+enum NodeTyoe
+{
+  INIT_NODE, SEXP_NODE, ATOM_NODE
+};
 // ===全域變數區===
 bool gSyntaxErrorFlag = false ;
 bool gEndOfFileFlag = false ;
@@ -68,10 +75,6 @@ public:
   } // GetPosInfoAsString()
 
 }; // class Token
-// =====TreeNode Class=====
-class TreeNode {
-
-}; // class TreeNode
 
 // =====Lexer Class=====
 class Lexer {
@@ -79,6 +82,7 @@ class Lexer {
 private:
   int mColCounter ;
   int mRowcounter ;
+  Token* currentToken ;
   // Return true while given char is a SEPARATOR.
   bool IsSep( char c ) {
     if ( c == '(' || c == ')' || c == '\"' || c == '\'' ||
@@ -117,14 +121,22 @@ private:
     // 2. 讀入字串內容 並處理escape字元
     while ( cin.peek() != '\"' && cin.peek() != -1 )
     {
-      c = GetChar() ;
 
       // string not closed error
-      if ( c == '\n' ) {
+      if ( cin.peek() == '\n' ) {
+        //  先取得正確line, col 再把換行讀掉
+        stringstream s1, s2 ;
+        s1 << mRowcounter, s2 << mColCounter+1 ;
+        GetChar() ;
+        // 設定Erroe Message
         gSyntaxErrorFlag = true ;
+        gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at line " + s1.str() ;
+        gErrorMessage +=  ", column " + s2.str() ;
+        
         return "" ;
       } // if()
 
+      c = GetChar() ;
       // 讀掉並重組escape字元
       if ( c == '\\' && cin.peek() == '\\' ) {
         GetChar() ;
@@ -149,13 +161,11 @@ private:
     
     // 3. 讀入後雙引號
     if ( cin.peek() == -1 ) {
-      cout << "[Error]StringHelper(): EOF encounterred..." << endl ;
-      gSyntaxErrorFlag = true ;
+      gEndOfFileFlag = true ;
       return "" ;
     } // if()
 
     c = GetChar() ;
-    if ( c != '\"' ) cout << "[Error]StringHelper(): String without end-qoutoe..." << endl ;
     tokenString += c ;
     return tokenString ;
   } // StringHelper()
@@ -248,17 +258,9 @@ private:
     else return true ;
 
   } // IsFloat()
-
-public:
-  // 建構子：初始化
-  Lexer() {
-    mColCounter = 0 ;
-    mRowcounter = 1 ;
-  } // Lexer()
-
-  // 回傳下一個Token
-  // 回傳NULL, 當遇到EOF或StringNotClosed Error.
-  Token* NextToken() {
+  // 讀進下一個Token
+  // 將currentToken設為NULL, 當讀到EOF或StringNotClosedError
+  void ReadToken() {
     
     string tokenString = "" ;
     
@@ -267,48 +269,55 @@ public:
       GetChar() ;
     } // while()
 
-    // 2.1 如果該非spaces是EOF則回傳NULL
+    // 2.1 如果該非spaces是EOF則currentToken設為NULL，並設定EOF旗標
     if ( cin.peek() == -1 ) { 
       gEndOfFileFlag = true ;
-      return NULL ;
+      currentToken = NULL ; 
+      return ;
     } // if()
 
     // 2.2 如果該非spaces是SEPARATOR
     if ( IsSep( cin.peek() ) ) {
-      // '(' or ')' or single-quite
+      // LP, RP, Quote 本身就是Token
       if ( cin.peek() == '(' || cin.peek() == ')' || cin.peek() == '\'' ) {
         char c  = GetChar() ;
         tokenString += c ;
         if ( tokenString == "(" )
-          return new Token( mRowcounter, mColCounter, tokenString, LP ) ;
+          currentToken = new Token( mRowcounter, mColCounter, tokenString, LP ) ;
         else if ( tokenString == ")" )
-          return new Token( mRowcounter, mColCounter, tokenString, RP ) ;
-        else if ( tokenString == "\'" )
-          return new Token( mRowcounter, mColCounter, tokenString, QUOTE ) ;
+          currentToken = new Token( mRowcounter, mColCounter, tokenString, RP ) ;
+        else if ( tokenString == "\'" ) 
+          currentToken = new Token( mRowcounter, mColCounter, tokenString, QUOTE ) ;
         else
-          cout << "[Error]NextToken(): This case shouldn't encounterred..." << endl ;          
+          cout << "[Error]NextToken(): This case shouldn't encounterred..." << endl ; 
+        
+        return ;           
       } // if()
-      // double-quote ( starts a string )
+      // 雙引號
       else if ( cin.peek() == '\"' ) {
         int col = mColCounter + 1 ;
         int line = mRowcounter ;
         tokenString = StringHelper() ;
-        // if string not closed, do not return a token.
+        // if string not closed, set NULL.
         if ( gSyntaxErrorFlag )
-          return NULL ;
+          currentToken = NULL ;
         else
-          return new Token( line, col, tokenString, STRING ) ;
+          currentToken = new Token( line, col, tokenString, STRING ) ;
+
+        return ;
       } // else if()
       // semicolon ( starts a line-comment )
       else if ( cin.peek() == ';' ) {
         while ( cin.peek() != '\n' && cin.peek() != -1 )
           GetChar() ;
         // 如果遇到EOF 不要讀掉
-        return NextToken() ;
+        ReadToken() ;
+        return ;
       } // else if()
       // spaces ( should not encounterred )
       else
         cout << "[Error]NextToken(): Spaces shouldn't encointerred..." << endl ;
+
     } // if()
 
     // 3. 從此非space字元讀到下一個SEPARATOR 確認Type
@@ -323,16 +332,36 @@ public:
       // check type
       TokenType t =  CheckType( tokenString ) ;
       // return
-      return new Token( line, col, tokenString, t ) ;
+      currentToken = new Token( line, col, tokenString, t ) ;
+      return ;
     } //  else
 
     cout << "[Error]NextToken(): Return a init token..." << endl ;
-    return new Token() ;
-  } // Token()
+    return ;
+  } // ReadToken()
 
+public:
+  // 建構子：初始化
+  Lexer() {
+    mColCounter = 0 ;
+    mRowcounter = 1 ;
+  } // Lexer()
+
+  Token* PeekToken() {
+    if ( currentToken == NULL && ! ( gSyntaxErrorFlag || gEndOfFileFlag ) )
+      ReadToken() ;
+
+    return currentToken ;
+  } // PeekToken()
+
+  Token* GetToken() {
+    Token* next = currentToken ;
+    currentToken = NULL ;
+
+    return next ;
+  } // NextToken()
+  
 }; // class Lexer
-
-// =====Parser Class=====
 
 // =======測試程式-Lexer=======
 int TestBench1() {
@@ -340,18 +369,21 @@ int TestBench1() {
   Token* token = new Token() ;
   bool end = false ;
   while ( ! end ) {
-    token = lx->NextToken() ;
-    if ( gSyntaxErrorFlag ) {
-      cout << endl << "String not closed..." << endl ;
-      gSyntaxErrorFlag = false ;
-    } // if()
-    else if ( gEndOfFileFlag ) {
-      cout << endl << "End of File..." << endl ;
-      end = true ;
-    } // else if()
-    else
-      cout << endl << token->ToString() << endl ;
+    token = lx->PeekToken() ;
+    if ( token == NULL ) {
+      if ( gSyntaxErrorFlag )
+        cout << gErrorMessage << endl ;
+      else if ( gEndOfFileFlag )
+        cout << "ERROR (no more input) : END-OF-FILE encountered" << endl ;
+      else
+        cout << "ERROR[TestBench1]: There's no flag have been set..." << endl ;
 
+      end = true ;
+    } // if()
+    else {
+      cout << endl << token->ToString() << endl ;
+      lx->GetToken() ;
+    } // else()
   } // while()
 
   cout << "End of Test Bench 1 ..." << endl ;
