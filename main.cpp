@@ -70,7 +70,7 @@ public:
     stringstream s1, s2 ;
     s1 << mRow ;
     s2 << mCol ;
-    string result = "Line " + s1.str() + " Column " + s2.str() ;
+    string result = "Line " + s1.str() + ", Column " + s2.str() ;
     return result ;
   } // GetPosInfoAsString()
 
@@ -362,9 +362,161 @@ public:
   } // NextToken()
   
 }; // class Lexer
+// =====TreeNode Class=====
+// TODO
+class TreeNode {
+private:
+  NodeTyoe mNodeType ;
+  TokenType mTokenType ;
+  string mContent ;
+  int mIntValue ;
+  float mFloatValue ;
+
+public:
+  TreeNode* mLeft ;
+  TreeNode* mRight ;
+
+  TreeNode() {
+    mNodeType = INIT_NODE ;
+    mTokenType = INIT_TYPE ;
+    mContent = "" ;
+    mIntValue = -1 ;
+    mFloatValue = -1.0 ;
+
+  } // TreeNode()
+
+}; // class TreeNode
+
+// =====Parser Class=====
+class Parser {
+private:
+  Lexer *mLexer ;
+  vector<Token> mTokens ;
+  TreeNode *mHeadPtr ;
+
+  // Get Token from Lexer and push into vector
+  void Eat() {
+    Token* t = mLexer->GetToken() ;
+    mTokens.push_back( *t ) ;
+    return ;
+  } // Eat()
+  
+public:
+  Parser() {
+    mLexer = new Lexer() ;
+    mTokens.clear() ;
+    mHeadPtr = NULL ;
+  } // Parser()
+
+  // 根據文法讀入Token，若有誤則設定SyntaxErrorFlag
+  void ReadSExp() {
+    // TODO
+    Token* nextToken = mLexer->PeekToken() ;
+    if ( gSyntaxErrorFlag || gEndOfFileFlag ) return ;
+
+    /* Grammar
+     <S-exp>::= <ATOM> 
+              | LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
+              | QUOTE <S-exp>
+     */
+
+    // <ATOM>  ::= SYMBOL | INT | FLOAT | STRING | NIL | T
+    TokenType t = nextToken->GetType() ;
+    if ( t == SYMBOL || t == INT || t == FLOAT || t == STRING ||
+         t == NIL || t == T ) {
+      Eat() ;
+      return ;
+    } // if()
+    // QUOTE <S-exp>
+    else if ( t == QUOTE ) {
+      Eat() ;
+      ReadSExp() ;
+      return ;
+    } // else if()
+    // LP <S-exp> { <S-exp> } [ DOT <S-exp> ] RP
+    // LP RP
+    else {
+      // Syntax Error
+      if ( t != LP ) {
+        gSyntaxErrorFlag = true ;
+        gErrorMessage = "ERROR (unexpected token at " + nextToken->GetPosInfoAsString() ;
+        gErrorMessage +=  ") : " + nextToken->GetText() ;
+        return ;
+      } // if()
+
+      // eat '('
+      Eat() ;
+      nextToken = mLexer->PeekToken() ;
+      if ( nextToken == NULL )  return ;
+      // Special case : ()
+      if ( nextToken->GetType() == RP ) {
+        Eat() ;
+        return ;
+      } // if()
+      // LP <S-exp> { <S-exp> } [ DOT <S-exp> ] RP
+      //    ＾
+      ReadSExp() ;
+      if ( gSyntaxErrorFlag || gEndOfFileFlag ) return ;
+
+      nextToken = mLexer->PeekToken() ;
+      if ( nextToken == NULL ) return ;
+
+      while ( nextToken->GetType() != DOT && nextToken->GetType() != RP )
+      {
+        ReadSExp() ;
+        if ( gSyntaxErrorFlag || gEndOfFileFlag ) return ;
+
+        nextToken = mLexer->PeekToken() ;
+        if ( nextToken == NULL ) return ;
+
+      } // while()
+
+      if ( nextToken->GetType() == DOT ) {
+        Eat() ;
+        ReadSExp() ;
+        if ( gSyntaxErrorFlag || gEndOfFileFlag ) return ;
+      } // if()
+
+      nextToken = mLexer->PeekToken() ;
+      if ( nextToken == NULL ) return ;
+
+      if ( nextToken->GetType() == RP ) {
+        Eat() ;
+        return ;
+      } // if()
+      else {
+        Eat() ;
+        gSyntaxErrorFlag = true ;
+        gErrorMessage = "ERROR (unexpected token) : ')' expected " ;
+        gErrorMessage += "when token at " ;
+        gErrorMessage += nextToken->GetPosInfoAsString() ;
+        gErrorMessage += " is >>" ;
+        gErrorMessage += nextToken->GetText() ;
+        gErrorMessage += "<<" ;
+        return ;
+      } // else
+
+    } // else
+
+
+  } // ReadSExp()
+
+  // Print vector
+  void PrintVector()
+  {
+    int j = mTokens.size() ;
+    if ( j == 0 ) return ;
+
+    cout << "Left element..." << endl ;
+    for ( int i = 0 ; i < j ; i ++ )
+    {
+      cout << mTokens.at( i ).ToString() << endl ;
+    } // for()
+  } // PrintVector()
+}; // class Parser
 
 // =======測試程式-Lexer=======
-int TestBench1() {
+int Testbench_Lexer() {
   Lexer* lx = new Lexer() ;
   Token* token = new Token() ;
   bool end = false ;
@@ -376,7 +528,7 @@ int TestBench1() {
       else if ( gEndOfFileFlag )
         cout << "ERROR (no more input) : END-OF-FILE encountered" << endl ;
       else
-        cout << "ERROR[TestBench1]: There's no flag have been set..." << endl ;
+        cout << "ERROR[Testbench_Lexer]: There's no flag have been set..." << endl ;
 
       end = true ;
     } // if()
@@ -388,15 +540,24 @@ int TestBench1() {
 
   cout << "End of Test Bench 1 ..." << endl ;
   return 0 ;
-} // TestBench1()
+} // Testbench_Lexer()
+// =======測試程式-Lexer=======
+int TestBench_Syntax_Parser() {
+  Parser* p = new Parser() ;
+  p->ReadSExp() ;
+  if ( gSyntaxErrorFlag ) cout << gErrorMessage << endl ;
+  else p->PrintVector() ;
 
+  return 0 ;
+} // TestBench_Syntax_Parser()
 // =======主程式=======
 
 int main()
 {
   cout << "Welecome!" << endl ;
   // test bench 1
-  TestBench1() ;
-
+  // Testbench_Lexer() ;
+  // test bench 2
+  TestBench_Syntax_Parser() ;
 } // main()
 
