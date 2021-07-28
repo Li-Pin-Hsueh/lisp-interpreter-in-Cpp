@@ -559,5 +559,7 @@ int main()
   // Testbench_Lexer() ;
   // test bench 2
   TestBench_Syntax_Parser() ;
+
+  cout << "End of program..." << endl ;
 } // main()
 
