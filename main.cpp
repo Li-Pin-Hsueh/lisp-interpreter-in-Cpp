@@ -425,6 +425,18 @@ public:
 
   } // Set_ATOM()
 
+  NodeType NodeType() {
+    return mNodeType ;
+  } // NodeType()
+
+  TokenType TokenType() {
+    return mTokenType ;
+  } // TokenType()
+
+  string Content() {
+    return mContent ;
+  } // Content()
+
 }; // class TreeNode
 
 // =====Parser Class=====
@@ -441,6 +453,119 @@ private:
     return ;
   } // Eat()
   
+    // 建樹的啟動點
+  void Build() {
+    if ( mHeadPtr == NULL ) {
+      mHeadPtr = new TreeNode() ;
+      Parse_SEXPR( mHeadPtr ) ;
+    }
+    else
+      cout << "ERROR[Build()]: mHeadPtr is NOT NULL..." << endl ;
+  } // Build()
+
+  void Parse_INIT( TreeNode* current ) {
+    // Initialize current node a INIT_NODE
+    current->Set_INIT() ;
+    // first get a token
+    if ( mTokens.size() == 0 ) {
+      cout << "ERROR[Parse_SEXPR]: Vector is empty..." << endl ;
+      return ;
+    } // if()
+
+    Token cToken = mTokens.at( 0 ) ;
+
+    if ( cToken.GetType() == RP ) {
+      current->Set_ATOM( "nil", NIL ) ;
+      return ;
+    } // if ()
+    else {
+      Parse_SEXPR( current->mLeft ) ;
+      if ( mTokens.at( 0 ).GetType() == DOT ) {
+        mTokens.erase( mTokens.begin() ) ;
+        Parse_SEXPR( current->mRight ) ;
+      } // if()
+      else Parse_INIT( current->mRight ) ;
+      return ;
+    } // else
+
+  } //Parse_INIT()
+
+  void Parse_SEXPR( TreeNode* current ) {
+    // Initialize current node a SEXPR_NODE
+    current->Set_SEXPR() ;
+    // first get a token
+    if ( mTokens.size() == 0 ) {
+      cout << "ERROR[Parse_SEXPR]: Vector is empty..." << endl ;
+      return ;
+    } // if()
+
+    Token cToken = mTokens.at( 0 ) ;
+
+    // Error Case
+    if ( cToken.GetType() == RP ) {
+      cout << "ERROR[Parse_SEXPR()]: First token is RP..." << endl ;
+      return ;
+    } // if()
+
+
+    else if ( cToken.GetType() == LP ) {
+      // 特殊case: ()
+      if ( mTokens.at( 1 ).GetType() == RP ) {
+        // Erase ( and )
+        mTokens.erase( mTokens.begin(), mTokens.begin() + 2 ) ;
+        current->Set_ATOM( "nil", NIL ) ;
+        return ;
+      } // if()
+      
+      // 1. erase LP
+      mTokens.erase( mTokens.begin() ) ;
+      // 2. Go Left
+      Parse_SEXPR( current->mLeft ) ;
+      // 3. Try read DOT, Go Right with Parse function
+      if ( mTokens.at( 0 ).GetType() == DOT ) {
+        mTokens.erase( mTokens.begin() ) ;
+        Parse_SEXPR( current->mRight ) ;
+      } // if()
+      else Parse_INIT( current->mRight ) ;
+      // 4. Read RP
+      if ( mTokens.size() == 0 || mTokens.at( 0 ).GetType() != RP )
+        cout << "ERROR[Parse_SEXPR()]: Cannot read RP..." << endl ;
+      else
+        mTokens.erase( mTokens.begin() ) ;
+
+      return ;
+    } // else if()
+
+
+    else if ( cToken.GetType() == QUOTE ) {
+      mTokens.erase( mTokens.begin() ) ;
+      current->mLeft->Set_QUOTE() ;
+      // Go right
+      Parse_SEXPR( current->mRight ) ;
+      return ;
+    } // else if()
+
+    else {
+      Parse_ATOM( current ) ;
+      return ;
+    } // else
+
+  } // Parse_SEXPR()
+
+  void Parse_ATOM( TreeNode* current ) {
+    // first get a token
+    if ( mTokens.size() == 0 ) {
+      cout << "ERROR[Parse_ATOM]: Vector is empty..." << endl ;
+      return ;
+    } // if()
+
+    Token cToken = mTokens.at( 0 ) ;
+
+    current->Set_ATOM( cToken.GetText(), cToken.GetType() ) ;
+    mTokens.erase( mTokens.begin() ) ;
+    return ;
+  } // Parse_ATOM()
+
 public:
   Parser() {
     mLexer = new Lexer() ;
@@ -561,121 +686,52 @@ public:
     if ( gSyntaxErrorFlag || gEndOfFileFlag ) return ;
 
     Build() ;
+    if ( mTokens.size() != 0 ) {
+      cout << "There is something left..." << endl ;
+      PrintVector() ;
+    } // if()
+    else {
+      cout << "====Recursively print every node====" << endl ;
+      Print( mHeadPtr ) ;
+      cout << "\n==================================" << endl ;
+    } // else
     return ;
   } // Run()
-
-  // 建樹的啟動點
-  void Build() {
-    if ( mHeadPtr == NULL ) {
-      mHeadPtr = new TreeNode() ;
-      Parse_SEXPR( mHeadPtr ) ;
-    }
-    else
-      cout << "ERROR[Build()]: mHeadPtr is NOT NULL..." << endl ;
-  } // Build()
-
-  void Parse_INIT( TreeNode* current ) {
-    // Initialize current node a INIT_NODE
-    current->Set_INIT() ;
-    // first get a token
-    if ( mTokens.size() == 0 ) {
-      cout << "ERROR[Parse_SEXPR]: Vector is empty..." << endl ;
+  // 遞迴方式印出樹形
+  void Print( TreeNode* current ) {
+    if ( current == NULL ) {
+      cout << "This node is null..." << endl ;
       return ;
     } // if()
 
-    Token cToken = mTokens.at( 0 ) ;
-
-    if ( cToken.GetType() == RP ) {
-      current->Set_ATOM( "nil", NIL ) ;
-      return ;
-    } // if ()
-    else {
-      Parse_SEXPR( current->mLeft ) ;
-      if ( mTokens.at( 0 ).GetType() == DOT ) {
-        mTokens.erase( mTokens.begin() ) ;
-        Parse_SEXPR( current->mRight ) ;
-      } // if()
-      else Parse_INIT( current->mRight ) ;
-      return ;
-    } // else
-
-  } //Parse_INIT()
-
-  void Parse_SEXPR( TreeNode* current ) {
-    // Initialize current node a SEXPR_NODE
-    current->Set_SEXPR() ;
-    // first get a token
-    if ( mTokens.size() == 0 ) {
-      cout << "ERROR[Parse_SEXPR]: Vector is empty..." << endl ;
-      return ;
+    if ( current->NodeType() == SEXPR_NODE ) {
+      cout << "( " ;
+      Print( current->mLeft ) ;
+      if ( current->mLeft->NodeType() != QUOTE_NODE )
+        cout << " . " ;
+      Print( current->mRight) ;
+      cout << " )" ;  
     } // if()
 
-    Token cToken = mTokens.at( 0 ) ;
-
-    // Error Case
-    if ( cToken.GetType() == RP ) {
-      cout << "ERROR[Parse_SEXPR()]: First token is RP..." << endl ;
-      return ;
-    } // if()
-
-
-    else if ( cToken.GetType() == LP ) {
-      // 特殊case: ()
-      if ( mTokens.at( 1 ).GetType() == RP ) {
-        // Erase ( and )
-        mTokens.erase( mTokens.begin(), mTokens.begin() + 2 ) ;
-        current->Set_ATOM( "nil", NIL ) ;
-        return ;
-      } // if()
-      
-      // 1. erase LP
-      mTokens.erase( mTokens.begin() ) ;
-      // 2. Go Left
-      Parse_SEXPR( current->mLeft ) ;
-      // 3. Try read DOT, Go Right with Parse function
-      if ( mTokens.at( 0 ).GetType() == DOT ) {
-        mTokens.erase( mTokens.begin() ) ;
-        Parse_SEXPR( current->mRight ) ;
-      } // if()
-      else Parse_INIT( current->mRight ) ;
-      // 4. Read RP
-      if ( mTokens.size() == 0 || mTokens.at( 0 ).GetType() != RP )
-        cout << "ERROR[Parse_SEXPR()]: Cannot read RP..." << endl ;
-      else
-        mTokens.erase( mTokens.begin() ) ;
-
-      return ;
+    else if ( current->NodeType() == INIT_NODE ) {
+      cout << "( " ;
+      Print( current->mLeft ) ;
+      cout << " . " ;
+      Print( current->mRight) ;
+      cout << " )" ;  
     } // else if()
 
-
-    else if ( cToken.GetType() == QUOTE ) {
-      mTokens.erase( mTokens.begin() ) ;
-      current->mLeft->Set_QUOTE() ;
-      // Go right
-      Parse_SEXPR( current->mRight ) ;
-      return ;
+    else if ( current->NodeType() == QUOTE_NODE ) {
+      cout << "quote " ;
     } // else if()
 
     else {
-      Parse_ATOM( current ) ;
-      return ;
+      cout << current->Content() ;
     } // else
 
-  } // Parse_SEXPR()
-
-  void Parse_ATOM( TreeNode* current ) {
-    // first get a token
-    if ( mTokens.size() == 0 ) {
-      cout << "ERROR[Parse_ATOM]: Vector is empty..." << endl ;
-      return ;
-    } // if()
-
-    Token cToken = mTokens.at( 0 ) ;
-
-    current->Set_ATOM( cToken.GetText(), cToken.GetType() ) ;
-    mTokens.erase( mTokens.begin() ) ;
     return ;
-  } // Parse_ATOM()
+
+  } // Print()
 
 }; // class Parser
 
@@ -721,6 +777,6 @@ int main()
   // test bench 2
   TestBench_Syntax_Parser() ;
 
-  cout << "End of program..." << endl ;
+  cout << "\nEnd of program..." << endl ;
 } // main()
 
