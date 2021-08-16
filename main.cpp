@@ -561,8 +561,10 @@ private:
     if ( current->NodeType() == CONS_NODE && expr ) {
       // 假expr
       if ( current->mRight->NodeType() == ATOM_NODE &&
-         current->mRight->TokenType() == NIL )
+         current->mRight->TokenType() == NIL ) {
         expr = false ;
+        spaces -= 2 ;
+      } // if()
 
     } // if()
 
@@ -594,10 +596,13 @@ private:
     // cons-node
     else if ( current->NodeType() == CONS_NODE ) {
       PrettyPrinter( current->mLeft, true, spaces+2 ) ;
+      // 不印dot
       if ( current->mRight->NodeType() == CONS_NODE ) {
         cout << spaceStr << "  " ;
         PrettyPrinter( current->mRight, false, spaces ) ;
       } // if()
+      
+      // 要印dot 右邊不能是nil
       else if ( current->mRight->TokenType() != NIL ) {
         cout << spaceStr << "  ." << endl << spaceStr << "  " ;
         PrettyPrinter( current->mRight, false, spaces ) ;
