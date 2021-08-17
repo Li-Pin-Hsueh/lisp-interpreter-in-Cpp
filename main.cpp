@@ -1,4 +1,6 @@
 // ===標頭檔區===
+# include <stdio.h>
+# include <stdlib.h>
 # include <iostream>
 # include <string>
 # include <sstream>
@@ -23,6 +25,7 @@ enum NodeType
 // ===全域變數區===
 bool gSyntaxErrorFlag = false ;
 bool gEndOfFileFlag = false ;
+bool gEndProgramFlag = false ;
 string gErrorMessage = "" ;
 
 // =====Token Class=====
@@ -69,7 +72,7 @@ public:
     stringstream s1, s2 ;
     s1 << mRow ;
     s2 << mCol ;
-    string result = "Line " + s1.str() + ", Column " + s2.str() ;
+    string result = "Line " + s1.str() + " Column " + s2.str() ;
     return result ;
   } // GetPosInfoAsString()
 
@@ -126,11 +129,13 @@ private:
         //  先取得正確line, col 再把換行讀掉
         stringstream s1, s2 ;
         s1 << mRowcounter, s2 << mColCounter+1 ;
+        // 已經讀掉 不需要clear
         GetChar() ;
         // 設定Erroe Message
         gSyntaxErrorFlag = true ;
-        gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at line " + s1.str() ;
-        gErrorMessage +=  ", column " + s2.str() ;
+        
+        gErrorMessage = "ERROR (no closing quote) : END-OF-LINE encountered at Line " + s1.str() ;
+        gErrorMessage +=  " Column " + s2.str() ;
         
         return "" ;
       } // if()
@@ -302,8 +307,9 @@ private:
         // if string not closed, set NULL.
         if ( gSyntaxErrorFlag )
           mCurrentToken = NULL ;
-        else
+        else {
           mCurrentToken = new Token( line, col, tokenString, STRING ) ;
+        } // else
 
         return ;
       } // else if()
@@ -311,7 +317,7 @@ private:
       else if ( cin.peek() == ';' ) {
         while ( cin.peek() != '\n' && cin.peek() != -1 )
           GetChar() ;
-        // 如果遇到EOF 不要讀掉
+        // 如果遇到EOF或換行 不要讀掉
         ReadToken() ;
         return ;
       } // else if()
@@ -333,6 +339,11 @@ private:
       // check type
       TokenType t =  CheckType( tokenString ) ;
       // return
+      if ( t == NIL )
+        tokenString = "nil" ;
+      else if ( t == T )
+        tokenString = "#t" ;
+
       mCurrentToken = new Token( line, col, tokenString, t ) ;
       return ;
     } // else
@@ -362,7 +373,46 @@ public:
 
     return next ;
   } // GetToken()
-  
+  // 清除syntax error後整行
+  void ClearLine() {
+    while ( cin.peek() != '\n' && cin.peek() != -1 ) {
+      cin.get() ;
+    } // while()
+
+    if ( cin.peek() == '\n' )
+      cin.get() ;
+    else
+      ;
+
+    return ;
+
+  } // ClearLine()
+  // 清除Token該行的spaces
+  void ClearSpaces() {
+    while ( isspace( cin.peek() ) && ! ( cin.peek() == '\n' ) )
+    {
+      GetChar() ;
+    } // while
+    
+    // 只有註解
+    if ( cin.peek() == ';' ) {
+      while ( cin.peek() != '\n' && cin.peek() != -1 ) {
+        GetChar() ;
+      } // while
+
+    } // if()
+
+    // 只有空格
+    if ( cin.peek() == '\n' ) {
+      GetChar() ;
+      mColCounter = 0 ;
+      mRowcounter = 1 ;
+      
+    } // if()
+
+    return ;
+  } // ClearSpaces()
+
 }; // class Lexer
 // =====TreeNode Class=====
 // TODO
@@ -393,7 +443,7 @@ public:
 
     // Set Nil Node
     mRight->InitAtom( "nil", NIL ) ;
-  } ;
+  } // InitCons()
 
   void InitAtom( string s, TokenType type ) {
     // TODO
@@ -404,10 +454,10 @@ public:
     mRight = NULL ;
     // TODO : set value
     if ( type == INT ) {
-
+      mIntValue = atoi( mContent.c_str() ) ;
     } // if()
     else if ( type == FLOAT ) {
-
+      mFloatValue = atof( mContent.c_str() ) ;
     } // else if()
 
   } // InitAtom()
@@ -423,6 +473,14 @@ public:
   string Content() {
     return mContent ;
   } // Content()
+
+  int IntValue() {
+    return mIntValue ;
+  } // IntValue()
+
+  float FloatValue() {
+    return mFloatValue ;
+  } // FloatValue()
 
 }; // class TreeNode
 
@@ -460,7 +518,7 @@ private:
     } // if()
 
     // 取得第一個token
-    Token cToken = mTokens.at(0) ;
+    Token cToken = mTokens.at( 0 ) ;
     Token nextToken ;
     // LP RP
     if ( cToken.GetType() == LP && mTokens.at( 1 ).GetType() == RP ) {
@@ -525,6 +583,7 @@ private:
       current->InitAtom( "nil", NIL ) ;
       return ;
     } // if()
+    
     ParseEXPR( current->mLeft ) ;
     // try dot
     nextToken = mTokens.at( 0 ) ;
@@ -558,15 +617,16 @@ private:
     } // for()
 
     // 判斷是否要印括號
-    if ( current->NodeType() == CONS_NODE && expr ) {
-      // 假expr
-      if ( current->mRight->NodeType() == ATOM_NODE &&
-         current->mRight->TokenType() == NIL ) {
-        expr = false ;
-        spaces -= 2 ;
-      } // if()
+    // if ( current->NodeType() == CONS_NODE && expr ) {
+    //   // 假expr
+    //   if ( current->mLeft->NodeType() == CONS_NODE &&
+    //        current->mRight->NodeType() == ATOM_NODE &&
+    //        current->mRight->TokenType() == NIL ) {
+    //     expr = false ;
+    //     spaces -= 2 ;
+    //   } // if()
 
-    } // if()
+    // } // if()
 
     // 要印括號
     if ( expr && current->NodeType() == CONS_NODE ) {
@@ -601,7 +661,7 @@ private:
         cout << spaceStr << "  " ;
         PrettyPrinter( current->mRight, false, spaces ) ;
       } // if()
-      
+
       // 要印dot 右邊不能是nil
       else if ( current->mRight->TokenType() != NIL ) {
         cout << spaceStr << "  ." << endl << spaceStr << "  " ;
@@ -616,7 +676,12 @@ private:
     } // else if()
     // ATOM-NODE
     else {
-      cout << current->Content() << endl ;
+      if ( current->TokenType() == INT )
+        cout << current->IntValue() << endl ;
+      else if ( current->TokenType() == FLOAT )
+        printf( "%.3f\n", current->FloatValue() ) ;
+      else
+        cout << current->Content() << endl ;
       return ;
     } // else
 
@@ -667,8 +732,13 @@ public:
       // Syntax Error
       if ( t != LP ) {
         gSyntaxErrorFlag = true ;
-        gErrorMessage = "ERROR (unexpected token at " + nextToken->GetPosInfoAsString() ;
-        gErrorMessage +=  ") : " + nextToken->GetText() ;
+        mLexer->ClearLine() ;
+        // ERROR (unexpected token) : 
+        // atom or '(' expected when token at 
+        // Line X Column Y is >>...<<
+        gErrorMessage = "ERROR (unexpected token) : " ;
+        gErrorMessage += "atom or '(' expected when token at " + nextToken->GetPosInfoAsString() ;
+        gErrorMessage +=  " is >>" + nextToken->GetText() + "<<" ;
         return ;
       } // if()
 
@@ -715,6 +785,7 @@ public:
       else {
         Eat() ;
         gSyntaxErrorFlag = true ;
+        mLexer->ClearLine() ;
         gErrorMessage = "ERROR (unexpected token) : ')' expected " ;
         gErrorMessage += "when token at " ;
         gErrorMessage += nextToken->GetPosInfoAsString() ;
@@ -740,6 +811,36 @@ public:
     } // else
 
   } // Build()
+  // 檢查EXIT
+  bool CheckExit() {
+    if ( mTokens.size() == 3 ) {
+      if ( mTokens.at( 0 ).GetType() == LP &&
+           mTokens.at( 1 ).GetText() == "exit" &&
+           mTokens.at( 2 ).GetType() == RP )
+        return true ;
+    } // if()
+
+    else if ( mTokens.size() == 5 ) {
+      if ( mTokens.at( 0 ).GetType() == LP &&
+           mTokens.at( 1 ).GetText() == "exit" &&
+           mTokens.at( 2 ).GetType() == DOT &&
+           mTokens.at( 3 ).GetType() == NIL &&
+           mTokens.at( 4 ).GetType() == RP )
+        return true ;
+    } // else if()
+
+    return false ;
+
+  } // CheckExit()
+  
+  // 重置Parser 與 Lexer
+  void Reset() {
+    delete mLexer ;
+    mLexer = new Lexer() ;
+    mLexer->ClearSpaces() ;
+    mTokens.clear() ;
+    mHeadPtr = NULL ;
+  } // Reset()
 
 }; // class Parser
 
@@ -783,7 +884,7 @@ int TestBench_Syntax_Parser() {
     } // if()
 
     delete p ;
-  }
+  } // while
   
   return 0 ;
 } // TestBench_Syntax_Parser()
@@ -792,12 +893,49 @@ int TestBench_Syntax_Parser() {
 int main()
 {
   
-  cout << "Welecome!" << endl ;
-  // test bench 1
-  // Testbench_Lexer() ;
-  // test bench 2
-  TestBench_Syntax_Parser() ;
+  cout << "Welcome to OurScheme!\n"  ;
+  cout << endl << "> " ;
+  int gNum = 0 ;
+  Parser* parser = new Parser() ;
+  bool end = false ;
 
-  cout << "\nEnd of program..." << endl ;
+  cin >> gNum ;
+
+  while ( ! end ) {
+    
+    parser->ReadSExp() ;
+    gEndProgramFlag = parser->CheckExit() ;
+    if ( ! ( gSyntaxErrorFlag || gEndOfFileFlag || gEndProgramFlag ) ) {
+      parser->Build() ;
+      parser->Printer() ;
+      cout << endl ;
+      cout << "> " ;
+    } // if()
+    
+    
+
+    if ( gEndProgramFlag || gEndOfFileFlag )
+      end = true ;
+   
+    if ( gSyntaxErrorFlag ) {
+      cout << gErrorMessage << endl  ;
+      cout << endl << "> " ;
+      // cout << endl ;
+    } // if()
+
+    
+
+    parser->Reset() ;
+    gSyntaxErrorFlag = false ;
+
+    
+
+  } // while()
+
+  if ( gEndOfFileFlag )
+    cout << "ERROR (no more input) : END-OF-FILE encountered"  ;
+  
+  cout << endl << "Thanks for using OurScheme!"  ;
+
 } // main()
 
