@@ -489,7 +489,8 @@ class Parser {
 private:
   Lexer* mLexer ;
   vector<Token> mTokens ;
-  TreeNode* mHeadPtr ;
+  // TreeNode* mHeadPtr ;
+  
   // Get Token from Lexer and push into vector
   void Eat() {
     Token* t = mLexer->GetToken() ;
@@ -693,12 +694,15 @@ public:
   Parser() {
     mLexer = new Lexer() ;
     mTokens.clear() ;
-    mHeadPtr = NULL ;
+    // mHeadPtr = NULL ;
   } // Parser()
   
   // 遞迴方式印出樹形
-  void Printer() {
-    PrettyPrinter( mHeadPtr, true, 0 ) ;
+  void Printer( TreeNode* headPtr) {
+    if ( headPtr == NULL )
+      cout << "HeadPtr is NULL..." ;
+
+    PrettyPrinter( headPtr, true, 0 ) ;
   } // Printer()
   // 根據文法讀入Token，若有誤則設定SyntaxErrorFlag
   void ReadSExp() {
@@ -800,15 +804,17 @@ public:
 
   } // ReadSExp()
   // 建樹的啟動點
-  void Build() {
-    if ( mHeadPtr == NULL ) {
-      mHeadPtr = new TreeNode() ;
-      ParseEXPR( mHeadPtr ) ;
-
+  TreeNode* Build( TreeNode* headPrt ) {
+    if ( headPrt == NULL ) {
+      headPrt = new TreeNode() ;
+      ParseEXPR( headPrt ) ;
+      return headPrt ;
     } // if()
     else {
       cout << "Head pointer is not NULL..." << endl ;
     } // else
+
+    return NULL ;
 
   } // Build()
   // 檢查EXIT
@@ -839,7 +845,7 @@ public:
     mLexer = new Lexer() ;
     mLexer->ClearSpaces() ;
     mTokens.clear() ;
-    mHeadPtr = NULL ;
+    // mHeadPtr = NULL ;
   } // Reset()
 
 }; // class Parser
@@ -873,14 +879,15 @@ int Testbench_Lexer() {
 // =======測試程式-Parser=======
 int TestBench_Syntax_Parser() {
   
+  TreeNode* expr ;
   Parser* p ;
   while ( ! ( gSyntaxErrorFlag || gEndOfFileFlag ) )
   {
     p = new Parser() ;
     p->ReadSExp() ;
     if ( ! ( gSyntaxErrorFlag || gEndOfFileFlag ) ) {
-      p->Build() ;
-      p->Printer() ;
+      p->Build( expr ) ;
+      p->Printer( expr ) ;
     } // if()
 
     delete p ;
@@ -892,22 +899,22 @@ int TestBench_Syntax_Parser() {
 
 int main()
 {
-  
+  TreeNode* InputExpr = NULL ;
   cout << "Welcome to OurScheme!\n"  ;
   cout << endl << "> " ;
-  int gNum = 0 ;
+  // int gNum = 0 ;
   Parser* parser = new Parser() ;
   bool end = false ;
 
-  cin >> gNum ;
+  // cin >> gNum ;
 
   while ( ! end ) {
     
     parser->ReadSExp() ;
     gEndProgramFlag = parser->CheckExit() ;
     if ( ! ( gSyntaxErrorFlag || gEndOfFileFlag || gEndProgramFlag ) ) {
-      parser->Build() ;
-      parser->Printer() ;
+      InputExpr = parser->Build( InputExpr ) ;
+      parser->Printer( InputExpr ) ;
       cout << endl ;
       cout << "> " ;
     } // if()
@@ -924,12 +931,13 @@ int main()
     } // if()
 
     
-
+    // Reset
     parser->Reset() ;
+    delete InputExpr ;
+    InputExpr = NULL ;
     gSyntaxErrorFlag = false ;
 
-    
-
+  
   } // while()
 
   if ( gEndOfFileFlag )
