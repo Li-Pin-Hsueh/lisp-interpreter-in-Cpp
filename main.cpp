@@ -33,7 +33,7 @@ string gSystemCmd[ CMDNUM ] =
 } ;
 
 enum ErrorType {
-  EMPTY, UNBND_SYM, NON_LIST, APLY_NON_FUN, LEVL, NUM_OF_ARGS
+  EMPTY, UNBND_SYM, NON_LIST, APLY_NON_FUN, LEVL, NUM_OF_ARGS, WRONG_ARG_TYPE
 };
 // ===全域變數區===
 bool gSyntaxErrorFlag = false ;
@@ -798,11 +798,8 @@ public:
 
   OurSchemeException( ErrorType eT, string str ) {
     mErrorType = eT ;
-    if ( eT == UNBND_SYM )
-      mErrorMessage = "ERROR (unbound symbol) : " + str ;
-    else if ( eT == APLY_NON_FUN )
-      mErrorMessage = "ERROR (attempt tp apply non-function) : " + str ;
-    else if ( eT == LEVL ) {
+    
+    if ( eT == LEVL ) {
       if ( str == "clean-environment" ) str = "CLEAN-ENVIRONMENT" ;
       else if ( str == "exit" ) str = "EXIT" ;
       else if ( str == "define" ) str = "DEFINE" ;
@@ -810,8 +807,6 @@ public:
 
       mErrorMessage = "ERROR (level of" + str + ")" ;
     } // else if()
-    else if ( eT == NUM_OF_ARGS )
-      mErrorMessage = "ERROR (incorrect number of arguments) : " + str ;
       
 
   } // OurSchemeException()
@@ -819,9 +814,34 @@ public:
   OurSchemeException( ErrorType eT, TreeNode* expr ) {
     mErrorType = eT ;
     mExprToPrint = expr ;
+    
     if ( eT == NON_LIST )
       mErrorMessage = "ERROR (non-list) : " ;
+    if ( eT == UNBND_SYM )
+      mErrorMessage = "ERROR (unbound symbol) : " ;
+    else if ( eT == APLY_NON_FUN )
+      mErrorMessage = "ERROR (attempt tp apply non-function) : " ;
+    else if ( eT == NUM_OF_ARGS )
+      mErrorMessage = "ERROR (incorrect number of arguments) : " ;
     
+  } // OurSchemeException()
+
+  OurSchemeException( ErrorType eT, TreeNode* expr, TreeNode* cmd ) {
+    mErrorType = eT ;
+    mExprToPrint = expr ;
+
+    if ( eT == WRONG_ARG_TYPE && cmd->Content() == "car" ) {
+      mErrorMessage = "ERROR (car" ;
+      mErrorMessage += " with incorrect argument type) : " ;
+    } // if()
+    else if ( eT == WRONG_ARG_TYPE &&  cmd->Content() == "cdr" ) {
+      mErrorMessage = "ERROR (cdr" ;
+      mErrorMessage += " with incorrect argument type) : " ;
+    } // else if()
+
+    else
+      cout << "Something went wrong..." << endl ;
+
   } // OurSchemeException()
 
 }; // class OuSchemeException
@@ -928,7 +948,7 @@ public:
       // 檢查symbol是否在IntnalCmdMap 或 SymBindingMap
       string sym = expr->Content() ;
       if ( ! ( HasCmd( sym ) || HasBinding( sym ) ) )
-        throw OurSchemeException( UNBND_SYM, sym ) ;
+        throw OurSchemeException( UNBND_SYM, expr ) ;
       else if ( HasCmd( sym ) )
         return expr ;
       else
@@ -951,7 +971,7 @@ public:
       TreeNode* firstArg = expr->mLeft ;
       if ( firstArg->NodeType() == ATOM_NODE && firstArg->TokenType() != SYMBOL &&
            firstArg->TokenType() != QUOTE ) {
-        throw OurSchemeException( APLY_NON_FUN, firstArg->Content() ) ;
+        throw OurSchemeException( APLY_NON_FUN, firstArg ) ;
       } // if()
 
       // first arg是一個symbol
@@ -1018,17 +1038,17 @@ public:
             if ( sym != "quote" )
               args = GetEvaluatedArgs( expr, depth ) ;
 
-            if ( sym == "cons" )  return Eval_cons( expr, args, firstArg->Content() ) ;
+            if ( sym == "cons" )  return Eval_cons( firstArg, args ) ;
             else if ( sym == "quote" ) { 
               args = GetQuotedArgs( expr, depth ) ;
-              return Eval_quote( expr, args, firstArg->Content() ) ;
+              return Eval_quote( firstArg, args ) ;
             } // else if()
-            else if ( sym == "list" ) return Eval_list( expr, args, firstArg->Content() ) ;
+            else if ( sym == "list" ) return Eval_list( firstArg, args ) ;
             else if ( sym == "car" || sym == "cdr" )
-              return Eval_partAccessor( expr, args, firstArg->Content(), sym ) ;
+              return Eval_partAccessor( firstArg, args ) ;
             else if ( pmtPredictMap[ sym ] > 0 ) {
               cout << "Do predicate..." << endl ;
-              return Eval_pmtPredicate( expr, args, firstArg->Content(), sym ) ;
+              return Eval_pmtPredicate( firstArg, args ) ;
             } // else if()
 
 
@@ -1062,10 +1082,10 @@ public:
 
   } // Evaluate()
 
-  TreeNode* Eval_cons( TreeNode* current, vector<TreeNode*> args, string sym ) {
+  TreeNode* Eval_cons( TreeNode* cmd, vector<TreeNode*> args ) {
     
     if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     TreeNode* result = new TreeNode() ;
     result->InitCons() ;
@@ -1075,16 +1095,16 @@ public:
 
   } // Eval_cons()
 
-  TreeNode* Eval_quote( TreeNode* current, vector<TreeNode*> args, string sym ) {
+  TreeNode* Eval_quote( TreeNode* cmd, vector<TreeNode*> args ) {
     if ( args.size() != 1 )
-      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     TreeNode* result =  args.at( 0 ) ;
     return result ;
 
   } // Eval_quote()
 
-  TreeNode* Eval_list( TreeNode* current, vector<TreeNode*> args, string sym ) {
+  TreeNode* Eval_list( TreeNode* cmd, vector<TreeNode*> args ) {
 
     TreeNode* result = new TreeNode() ;
     TreeNode* next ;
@@ -1105,16 +1125,20 @@ public:
     return result ;
   } // Eval_list()
 
-  TreeNode* Eval_partAccessor( TreeNode* current, vector<TreeNode*> args, string sym, string cmd ) {
+  TreeNode* Eval_partAccessor( TreeNode* cmd, vector<TreeNode*> args ) {
     if ( args.size() != 1 )
-      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+
+    if ( args.at( 0 )->NodeType() == ATOM_NODE )
+      throw OurSchemeException( WRONG_ARG_TYPE, args.at( 0 ), cmd ) ;
 
     TreeNode* result ;
     
 
-    if ( cmd == "car" )
+
+    if ( cmd->Content() == "car" )
       result = args.at( 0 )->mLeft ;
-    else if ( cmd == "cdr" )
+    else if ( cmd->Content() == "cdr" )
       result = args.at( 0 )->mRight ;
     else
       cout << "Not car or cdr at line 1105..." << endl ;
@@ -1123,19 +1147,50 @@ public:
 
   } // Eval_partAccessor()
 
-  TreeNode* Eval_pmtPredicate( TreeNode* current, vector<TreeNode*> args, string sym, string cmd ) {
+  TreeNode* Eval_pmtPredicate( TreeNode* cmd, vector<TreeNode*> args ) {
     if ( args.size() != 1 )
-      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     bool result = false ;
     TreeNode *arg = args.at( 0 ) ;
 
     // Evaluate each function
-    if ( cmd == "atom?" && arg->NodeType() == ATOM_NODE )
+    if ( cmd->Content() == "atom?" && arg->NodeType() == ATOM_NODE )
       result = true ;
-    else if ( cmd == "pair?" && arg->NodeType() == CONS_NODE ) {
-      ;
+    else if ( cmd->Content() == "pair?" && arg->NodeType() == CONS_NODE ) {
+      if ( arg->mRight->NodeType() == CONS_NODE || arg->mRight->TokenType() != NIL )
+        result = true ;
     } // else if()
+    else if ( cmd->Content() == "list?" && arg->NodeType() == CONS_NODE ) {
+      result = true ;
+      for ( TreeNode* next = arg->mRight ; next != NULL ; next = next->mRight ) {
+        if ( next->NodeType() == ATOM_NODE && next->TokenType() != NIL )
+          result = false ;
+      } // for()
+    } // else if()
+    else if ( cmd->Content() == "null?" && arg->NodeType() == ATOM_NODE && arg->TokenType() == NIL )
+      result = true ;
+
+    else if ( cmd->Content() == "integer?" && arg->NodeType() == ATOM_NODE && arg->TokenType() == INT )
+      result = true ;
+
+    else if ( cmd->Content() == "number?" || cmd->Content() == "real?" ) {
+      if ( cmd->NodeType() == ATOM_NODE &&
+           ( arg->TokenType() == INT || arg->TokenType() == FLOAT ) )
+        result = true ;
+    } // else if()
+
+    else if ( cmd->Content() == "string?" && 
+              arg->NodeType() == ATOM_NODE && arg->TokenType() == STRING )
+      result = true ;
+
+    else if ( cmd->Content() == "boolean?" && arg->NodeType() == ATOM_NODE &&
+              ( arg->TokenType() == T || arg->TokenType() == NIL ) )
+      result = true ;
+    else if ( cmd->Content() == "symbol?" && arg->NodeType() == ATOM_NODE &&
+              arg->TokenType() == SYMBOL )
+      result = true ;
+
 
     // Generating Result...
     TreeNode* t = new TreeNode() ;
@@ -1224,7 +1279,7 @@ void PrettyPrinter( TreeNode* current, bool expr, int spaces ) {
     else if ( current->TokenType() == FLOAT )
       printf( "%.3f\n", current->FloatValue() ) ;
     else if ( current->TokenType() == NIL )
-      cout << "()" << endl ;
+      cout << "nil" << endl ;
     else
       cout << current->Content() << endl ;
     return ;
@@ -1269,7 +1324,7 @@ int main()
         Printer( resultExpr ) ;
       } catch ( OurSchemeException e ) {
         cout << e.mErrorMessage ;
-        if ( e.mErrorType == NON_LIST )
+        if ( e.mExprToPrint != NULL )
           Printer( e.mExprToPrint ) ;
         else
           cout << endl ;
