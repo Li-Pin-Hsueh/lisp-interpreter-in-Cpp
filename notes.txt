@@ -1,0 +1,8 @@
+// 2021.08.12
+修改什麼
+1. 4種Node type : { INIT, SEXPR, QUOTE, ATOM }
+2. 沒有dot就往右生出init-node
+3. QUOTE 右邊一律是nil
+4. SEXPR會生出QUOTE or ATOM
+5. 右邊的SEXPR不能印括號
+

@@ -6,9 +6,10 @@
 # include <sstream>
 # include <ctype.h>
 # include <vector>
-
+# include <map>
 using namespace std ;
 
+# define CMDNUM 38 
 // ===列舉、結構區===
 string gTokenTypeMap[] = { "INIT_TYPE", "LP", "RP", "INT", "FLOAT", "STRING", "DOT",
                            "NIL", "T", "QUOTE", "SYMBOL" } ;
@@ -22,11 +23,33 @@ enum NodeType
 {
   CONS_NODE, ATOM_NODE
 };
+
+string gSystemCmd[ CMDNUM ] = 
+{
+  "cons", "list", "quote", "define", "car", "cdr","atom?", "pair?", "list?", "null?",
+  "integer?", "real?", "number?", "string?", "boolean?", "symbol?", "+", "-", "*", "/",
+  "not", "and", "or", ">", ">=", "<", "<=", "=", "string-append", "string>?",
+  "string<?", "string=?", "eqv?", "equal?", "begin", "if", "cond", "clean-environment"
+} ;
+
+enum ErrorType {
+  EMPTY, UNBND_SYM, NON_LIST, APLY_NON_FUN, LEVL, NUM_OF_ARGS
+};
 // ===全域變數區===
 bool gSyntaxErrorFlag = false ;
 bool gEndOfFileFlag = false ;
 bool gEndProgramFlag = false ;
 string gErrorMessage = "" ;
+
+class Token ;
+class Lexer ;
+class TreeNode ;
+class Parser ;
+class Environment ;
+class OurSchemeException ;
+
+void PrettyPrinter( TreeNode* current, bool expr, int spaces ) ;
+void Printer( TreeNode* expr ) ;
 
 // =====Token Class=====
 class Token {
@@ -77,7 +100,6 @@ public:
   } // GetPosInfoAsString()
 
 }; // class Token
-
 // =====Lexer Class=====
 class Lexer {
 
@@ -483,14 +505,13 @@ public:
   } // FloatValue()
 
 }; // class TreeNode
-
 // =====Parser Class=====
 class Parser {
 private:
   Lexer* mLexer ;
   vector<Token> mTokens ;
-  // TreeNode* mHeadPtr ;
-  
+  TreeNode* mHeadPtr ;
+
   // Get Token from Lexer and push into vector
   void Eat() {
     Token* t = mLexer->GetToken() ;
@@ -609,86 +630,6 @@ private:
     SimplePrinter( current->mLeft ) ;
     SimplePrinter( current->mRight ) ;
   } // SimplePrinter()
-  
-  void PrettyPrinter( TreeNode* current, bool expr, int spaces ) {
-    
-    string spaceStr = "" ;
-    for ( int i = 0 ; i < spaces ; i ++ ) {
-      spaceStr += " " ;
-    } // for()
-
-    // 判斷是否要印括號
-    // if ( current->NodeType() == CONS_NODE && expr ) {
-    //   // 假expr
-    //   if ( current->mLeft->NodeType() == CONS_NODE &&
-    //        current->mRight->NodeType() == ATOM_NODE &&
-    //        current->mRight->TokenType() == NIL ) {
-    //     expr = false ;
-    //     spaces -= 2 ;
-    //   } // if()
-
-    // } // if()
-
-    // 要印括號
-    if ( expr && current->NodeType() == CONS_NODE ) {
-      
-      cout << "( " ;
-      PrettyPrinter( current->mLeft, true, spaces+2 ) ;
-      
-      // TODO
-      if ( current->mRight->NodeType() == ATOM_NODE &&
-           current->mRight->TokenType() != NIL ) {
-        cout << spaceStr << "  .\n" << spaceStr << "  " ;
-        PrettyPrinter( current->mRight, false, spaces ) ;
-      } // if()
-      else if ( current->mRight->NodeType() == CONS_NODE ) {
-        cout << spaceStr << "  " ;
-        PrettyPrinter( current->mRight, false, spaces ) ;
-      } // else if()
-      else {
-        ;
-      } // else
-
-      cout << spaceStr << ")" << endl ;
-
-      return ;
-    } // if()
-
-    // cons-node
-    else if ( current->NodeType() == CONS_NODE ) {
-      PrettyPrinter( current->mLeft, true, spaces+2 ) ;
-      // 不印dot
-      if ( current->mRight->NodeType() == CONS_NODE ) {
-        cout << spaceStr << "  " ;
-        PrettyPrinter( current->mRight, false, spaces ) ;
-      } // if()
-
-      // 要印dot 右邊不能是nil
-      else if ( current->mRight->TokenType() != NIL ) {
-        cout << spaceStr << "  ." << endl << spaceStr << "  " ;
-        PrettyPrinter( current->mRight, false, spaces ) ;
-      } // else if()
-      else {
-        ;
-      } // else
-
-      return ;
-
-    } // else if()
-    // ATOM-NODE
-    else {
-      if ( current->TokenType() == INT )
-        cout << current->IntValue() << endl ;
-      else if ( current->TokenType() == FLOAT )
-        printf( "%.3f\n", current->FloatValue() ) ;
-      else
-        cout << current->Content() << endl ;
-      return ;
-    } // else
-
-    return ;
-
-  } // PrettyPrinter()
 
 public:
   Parser() {
@@ -696,14 +637,8 @@ public:
     mTokens.clear() ;
     // mHeadPtr = NULL ;
   } // Parser()
-  
-  // 遞迴方式印出樹形
-  void Printer( TreeNode* headPtr) {
-    if ( headPtr == NULL )
-      cout << "HeadPtr is NULL..." ;
-
-    PrettyPrinter( headPtr, true, 0 ) ;
-  } // Printer()
+  //   PrettyPrinter( mHeadPtr, true, 0 ) ;
+  // } // Printer()
   // 根據文法讀入Token，若有誤則設定SyntaxErrorFlag
   void ReadSExp() {
     // TODO
@@ -804,11 +739,11 @@ public:
 
   } // ReadSExp()
   // 建樹的啟動點
-  TreeNode* Build( TreeNode* headPrt ) {
-    if ( headPrt == NULL ) {
-      headPrt = new TreeNode() ;
-      ParseEXPR( headPrt ) ;
-      return headPrt ;
+  TreeNode* Build() {
+    if ( mHeadPtr == NULL ) {
+      mHeadPtr = new TreeNode() ;
+      ParseEXPR( mHeadPtr ) ;
+      return mHeadPtr ;
     } // if()
     else {
       cout << "Head pointer is not NULL..." << endl ;
@@ -838,83 +773,509 @@ public:
     return false ;
 
   } // CheckExit()
-  
   // 重置Parser 與 Lexer
   void Reset() {
     delete mLexer ;
     mLexer = new Lexer() ;
     mLexer->ClearSpaces() ;
     mTokens.clear() ;
-    // mHeadPtr = NULL ;
+    mHeadPtr = NULL ;
   } // Reset()
 
 }; // class Parser
+// =====OurSchemeException=====
+class OurSchemeException {
+public:
+  ErrorType mErrorType ;
+  string mErrorMessage ;
+  TreeNode* mExprToPrint ;
 
-// =======測試程式-Lexer=======
-int Testbench_Lexer() {
-  Lexer* lx = new Lexer() ;
-  Token* token = new Token() ;
-  bool end = false ;
-  while ( ! end ) {
-    token = lx->PeekToken() ;
-    if ( token == NULL ) {
-      if ( gSyntaxErrorFlag )
-        cout << gErrorMessage << endl ;
-      else if ( gEndOfFileFlag )
-        cout << "ERROR (no more input) : END-OF-FILE encountered" << endl ;
-      else
-        cout << "ERROR[Testbench_Lexer]: There's no flag have been set..." << endl ;
+  OurSchemeException() {
+    mErrorMessage = "shouldn't encounterred..." ;
+    mErrorType = EMPTY ;
+    mExprToPrint = NULL ;
+  } // OurSchemeException()
 
-      end = true ;
+  OurSchemeException( ErrorType eT, string str ) {
+    mErrorType = eT ;
+    if ( eT == UNBND_SYM )
+      mErrorMessage = "ERROR (unbound symbol) : " + str ;
+    else if ( eT == APLY_NON_FUN )
+      mErrorMessage = "ERROR (attempt tp apply non-function) : " + str ;
+    else if ( eT == LEVL ) {
+      if ( str == "clean-environment" ) str = "CLEAN-ENVIRONMENT" ;
+      else if ( str == "exit" ) str = "EXIT" ;
+      else if ( str == "define" ) str = "DEFINE" ;
+      else cout << "ERROR[]: line 808...." << endl ;
+
+      mErrorMessage = "ERROR (level of" + str + ")" ;
+    } // else if()
+    else if ( eT == NUM_OF_ARGS )
+      mErrorMessage = "ERROR (incorrect number of arguments) : " + str ;
+      
+
+  } // OurSchemeException()
+
+  OurSchemeException( ErrorType eT, TreeNode* expr ) {
+    mErrorType = eT ;
+    mExprToPrint = expr ;
+    if ( eT == NON_LIST )
+      mErrorMessage = "ERROR (non-list) : " ;
+    
+  } // OurSchemeException()
+
+}; // class OuSchemeException
+
+// =====Environment Class=====
+class Environment {
+
+private:
+  TreeNode* mResultPrt ;
+  map<string, int> mCommandMap ;
+  map<string, TreeNode*> mSymBindingMap ;
+
+  // Return true if given string is a Internal Command
+  bool HasCmd( string cmdStr ) {
+    map<string, int>::iterator iter ;
+    iter = mCommandMap.find( cmdStr ) ;
+
+    if ( iter == mCommandMap.end() )
+      return false ;
+    else
+      return true ;
+
+  } // HasCmd()  
+  // Return true if Symbol is bound
+  bool HasBinding( string symStr ) {
+    map<string, TreeNode*>::iterator iter ;
+    iter = mSymBindingMap.find( symStr ) ;
+    if ( iter == mSymBindingMap.end() ) return false ;
+    else return true ;
+  } // HasBinding()
+  // Return Bound TreeNode
+  TreeNode* GetBinding( string symStr ) {
+    if ( ! HasBinding( symStr ) ) {
+      cout << "Error! Symbol not bound..." << endl ;
+      return NULL ;
     } // if()
     else {
-      cout << endl << token->ToString() << endl ;
-      lx->GetToken() ;
-    } // else()
-  } // while()
+      map<string, TreeNode*>::iterator iter ;
+      iter = mSymBindingMap.find( symStr ) ;
+      return mSymBindingMap[ symStr ] ;
+    } // else
+  } // GetBinding()
+  // Return number of args
+  int GetNumOfArgs( TreeNode* expr ) {
+    TreeNode* peek ;
+    int count = 0 ;
+    bool end ;
+    for ( peek = expr->mRight ; peek != NULL ; peek = peek->mRight ) {
+      if ( peek->NodeType() == CONS_NODE )
+        count ++ ;
+      else if ( peek->NodeType() == ATOM_NODE && peek->TokenType() != NIL )
+        cout << "ERROR[GetNnumOfArgs]: ATOM-NODE and NOT NIL..." << endl ;
+      else ;
 
-  cout << "End of Test Bench 1 ..." << endl ;
-  return 0 ;
-} // Testbench_Lexer()
-// =======測試程式-Parser=======
-int TestBench_Syntax_Parser() {
-  
-  TreeNode* expr ;
-  Parser* p ;
-  while ( ! ( gSyntaxErrorFlag || gEndOfFileFlag ) )
-  {
-    p = new Parser() ;
-    p->ReadSExp() ;
-    if ( ! ( gSyntaxErrorFlag || gEndOfFileFlag ) ) {
-      p->Build( expr ) ;
-      p->Printer( expr ) ;
+    } // for()
+
+    return count ;
+
+  } // GetNumOfArgs()
+  // Return evaluated args
+  vector<TreeNode*> GetEvaluatedArgs( TreeNode* expr, int depth ) {
+    vector<TreeNode*> args ;
+    for ( TreeNode* next = expr->mRight ; next != NULL  ; next = next->mRight ) {
+      if ( next->NodeType() == CONS_NODE )
+        args.push_back( Evaluate( next->mLeft, depth+1 ) ) ;
+
+    } // for()
+
+    return args ;
+  } // GetEvaluatedArgs()
+
+  // Return args for quote
+  vector<TreeNode*> GetQuotedArgs( TreeNode* expr, int depth ) {
+    vector<TreeNode*> args ;
+    for ( TreeNode* next = expr->mRight ; next != NULL  ; next = next->mRight ) {
+      if ( next->NodeType() == CONS_NODE )
+        args.push_back( next->mLeft ) ;
+
+    } // for()
+
+    return args ;
+  } // GetQuotedArgs()
+
+public:
+  friend class OurSchemeException ;
+  // Initializer
+  Environment() {
+    for ( int i = 0 ; i < CMDNUM ; i ++ ) {
+      mCommandMap[ gSystemCmd[ i ] ] = i+1 ;
+    } // for()
+
+  } // Environment()
+
+  TreeNode* Evaluate( TreeNode* expr, int depth ) {
+    
+    // Evaluating an atom but NOT a symbol
+    if ( expr->NodeType() == ATOM_NODE && expr->TokenType() != SYMBOL && expr->TokenType() != QUOTE ) {
+      // cout << "Evaluated..." << endl ;
+      return expr ;
     } // if()
 
-    delete p ;
-  } // while
+    // Evaluating a symbol
+    else if ( expr->NodeType() == ATOM_NODE && expr->TokenType() == SYMBOL ) {
+      // 檢查symbol是否在IntnalCmdMap 或 SymBindingMap
+      string sym = expr->Content() ;
+      if ( ! ( HasCmd( sym ) || HasBinding( sym ) ) )
+        throw OurSchemeException( UNBND_SYM, sym ) ;
+      else if ( HasCmd( sym ) )
+        return expr ;
+      else
+        return GetBinding( sym ) ;
+
+    } // else if()
+
+    // Evaluating a (...)
+    else {
+
+      // 檢查non-list error
+      TreeNode* peek ;
+      for ( peek = expr->mRight ; peek != NULL ; peek = peek->mRight ) {
+        if ( peek->NodeType() == ATOM_NODE && peek->TokenType() != NIL )
+          throw OurSchemeException( NON_LIST, expr ) ;
+
+      } // for()
+
+      // 檢查apply-non-function error (first arg is a atom but not symbol)
+      TreeNode* firstArg = expr->mLeft ;
+      if ( firstArg->NodeType() == ATOM_NODE && firstArg->TokenType() != SYMBOL &&
+           firstArg->TokenType() != QUOTE ) {
+        throw OurSchemeException( APLY_NON_FUN, firstArg->Content() ) ;
+      } // if()
+
+      // first arg是一個symbol
+      else if ( firstArg->NodeType() == ATOM_NODE && 
+                ( firstArg->TokenType() == SYMBOL || firstArg->TokenType() == QUOTE ) ) {
+        string sym = firstArg->Content() ;
+        
+        bool boundToFunction = false ;
+        if ( HasBinding( sym ) && HasCmd( GetBinding( sym )->Content() ) ) // check SYM is SYMBOL
+          boundToFunction = true ;
+
+        // 若SYM是Function
+        if ( HasCmd( sym ) || boundToFunction ) {
+          // SO MUCH TO DO...
+
+          // 將SYM設定成綁定的CMD
+          if ( boundToFunction )
+            sym =  GetBinding( sym )->Content() ;
+
+          // Level Error ( clean-environment or exit or define )
+          if ( depth != 0 && ( sym == "clean-environment" || sym == "exit" || sym == "define" ) )
+            throw OurSchemeException( LEVL, sym ) ;
+
+          // SYM is 'define', 'cond'  ||    (proj.3) 'lambda', 'set!', 'let',
+          else if ( sym == "define" || sym == "cond" ) {
+            cout << "Not implement yet..." << endl ;
+            // TO DO 檢查FORMAT
+            // 如果有ERROR
+            // check num of args
+            // 沒有ERROR -> do eval()
+            // return result
+          } // else if()
+
+          // SYM is 'if', 'and', 'or'
+          else if ( sym == "if" || sym == "and" || sym == "or" ) {
+            cout << "Not implement yet..." << endl ;
+            // check number of args
+            // eval
+            // return result
+
+          } // else if()
+
+          // other functions
+          // "atom?", "pair?", "list?", "null?","integer?", "real?",
+          //  "number?", "string?", "boolean?", "symbol?",
+          //  "+", "-", "*", "/",
+          // "not", ">", ">=", "<", "<=", "=", "string-append", "string>?",
+          // "string<?", "string=?", "eqv?", "equal?", "begin"
+          else {
+            // get args
+            vector<TreeNode*> args ;
+            map<string, int> pmtPredictMap ;
+            pmtPredictMap.insert( { "atom?", 1 } ) ;
+            pmtPredictMap.insert( { "pair?", 2 } ) ;
+            pmtPredictMap.insert( { "list?", 3 } ) ;
+            pmtPredictMap.insert( { "null?", 4 } ) ;
+            pmtPredictMap.insert( { "integer?", 5 } ) ;
+            pmtPredictMap.insert( { "real?", 6 } ) ;
+            pmtPredictMap.insert( { "number?", 7 } ) ;
+            pmtPredictMap.insert( { "string?", 8 } ) ;
+            pmtPredictMap.insert( { "boolean?", 9 } ) ;
+            pmtPredictMap.insert( { "symbol?", 10 } ) ;
+
+            if ( sym != "quote" )
+              args = GetEvaluatedArgs( expr, depth ) ;
+
+            if ( sym == "cons" )  return Eval_cons( expr, args, firstArg->Content() ) ;
+            else if ( sym == "quote" ) { 
+              args = GetQuotedArgs( expr, depth ) ;
+              return Eval_quote( expr, args, firstArg->Content() ) ;
+            } // else if()
+            else if ( sym == "list" ) return Eval_list( expr, args, firstArg->Content() ) ;
+            else if ( sym == "car" || sym == "cdr" )
+              return Eval_partAccessor( expr, args, firstArg->Content(), sym ) ;
+            else if ( pmtPredictMap[ sym ] > 0 ) {
+              cout << "Do predicate..." << endl ;
+              return Eval_pmtPredicate( expr, args, firstArg->Content(), sym ) ;
+            } // else if()
+
+
+          } // else
+
+        } // if()
+
+        // SYM is NOT the name of known function
+        else {
+          if ( ! HasBinding( sym ) )
+            throw OurSchemeException( UNBND_SYM, sym ) ;
+          else {
+            string boundSYM = GetBinding( sym )->Content() ;
+            throw OurSchemeException( APLY_NON_FUN, boundSYM ) ;
+          } // else
+
+        } // else
+
+      } // if()
+
+      // first arg是一個( ... )
+      else {
+
+      } // else
+
+    } // else
+
+
+
+    return NULL ;
+
+  } // Evaluate()
+
+  TreeNode* Eval_cons( TreeNode* current, vector<TreeNode*> args, string sym ) {
+    
+    if ( args.size() != 2 )
+      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+
+    TreeNode* result = new TreeNode() ;
+    result->InitCons() ;
+    result->mLeft = args.at( 0 ) ;
+    result->mRight = args.at( 1 ) ;
+    return result ;
+
+  } // Eval_cons()
+
+  TreeNode* Eval_quote( TreeNode* current, vector<TreeNode*> args, string sym ) {
+    if ( args.size() != 1 )
+      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+
+    TreeNode* result =  args.at( 0 ) ;
+    return result ;
+
+  } // Eval_quote()
+
+  TreeNode* Eval_list( TreeNode* current, vector<TreeNode*> args, string sym ) {
+
+    TreeNode* result = new TreeNode() ;
+    TreeNode* next ;
   
-  return 0 ;
-} // TestBench_Syntax_Parser()
+    next = result ;
+
+    if ( args.size() == 0 )
+      result->InitAtom( "()", NIL ) ;
+    else {
+      for ( int i = 0 ; i < args.size() ; i++ ) {
+        next->InitCons() ;
+        next->mLeft = args.at( i ) ;
+        next = next->mRight ;
+      } // for()
+
+    } // else
+
+    return result ;
+  } // Eval_list()
+
+  TreeNode* Eval_partAccessor( TreeNode* current, vector<TreeNode*> args, string sym, string cmd ) {
+    if ( args.size() != 1 )
+      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+
+    TreeNode* result ;
+    
+
+    if ( cmd == "car" )
+      result = args.at( 0 )->mLeft ;
+    else if ( cmd == "cdr" )
+      result = args.at( 0 )->mRight ;
+    else
+      cout << "Not car or cdr at line 1105..." << endl ;
+
+    return result ;
+
+  } // Eval_partAccessor()
+
+  TreeNode* Eval_pmtPredicate( TreeNode* current, vector<TreeNode*> args, string sym, string cmd ) {
+    if ( args.size() != 1 )
+      throw OurSchemeException( NUM_OF_ARGS, sym ) ;
+
+    bool result = false ;
+    TreeNode *arg = args.at( 0 ) ;
+
+    // Evaluate each function
+    if ( cmd == "atom?" && arg->NodeType() == ATOM_NODE )
+      result = true ;
+    else if ( cmd == "pair?" && arg->NodeType() == CONS_NODE ) {
+      ;
+    } // else if()
+
+    // Generating Result...
+    TreeNode* t = new TreeNode() ;
+    if ( result )
+      t->InitAtom( "#t", T ) ;
+    else
+      t->InitAtom( "()", NIL ) ;
+
+    return t ;
+
+  } // Eval_pmtPredicate() ;
+
+}; // class Environment
+
+// =======全域函式=======
+
+void PrettyPrinter( TreeNode* current, bool expr, int spaces ) {
+    
+  string spaceStr = "" ;
+  for ( int i = 0 ; i < spaces ; i ++ ) {
+    spaceStr += " " ;
+  } // for()
+
+  // 判斷是否要印括號
+  // if ( current->NodeType() == CONS_NODE && expr ) {
+  //   // 假expr
+  //   if ( current->mLeft->NodeType() == CONS_NODE &&
+  //    current->mRight->NodeType() == ATOM_NODE &&
+  //    current->mRight->TokenType() == NIL ) {
+  //   expr = false ;
+  //   spaces -= 2 ;
+  //   } // if()
+
+  // } // if()
+
+  // 要印括號
+  if ( expr && current->NodeType() == CONS_NODE ) {
+    
+    cout << "( " ;
+    PrettyPrinter( current->mLeft, true, spaces+2 ) ;
+    
+    // TODO
+    if ( current->mRight->NodeType() == ATOM_NODE &&
+         current->mRight->TokenType() != NIL ) {
+      cout << spaceStr << "  .\n" << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // if()
+    else if ( current->mRight->NodeType() == CONS_NODE ) {
+      cout << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // else if()
+    else {
+    ;
+    } // else
+
+    cout << spaceStr << ")" << endl ;
+
+    return ;
+  } // if()
+
+  // cons-node
+  else if ( current->NodeType() == CONS_NODE ) {
+    PrettyPrinter( current->mLeft, true, spaces+2 ) ;
+    // 不印dot
+    if ( current->mRight->NodeType() == CONS_NODE ) {
+      cout << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // if()
+
+    // 要印dot 右邊不能是nil
+    else if ( current->mRight->TokenType() != NIL ) {
+      cout << spaceStr << "  ." << endl << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // else if()
+    else {
+      ;
+    } // else
+
+    return ;
+
+  } // else if()
+  // ATOM-NODE
+  else {
+    if ( current->TokenType() == INT )
+      cout << current->IntValue() << endl ;
+    else if ( current->TokenType() == FLOAT )
+      printf( "%.3f\n", current->FloatValue() ) ;
+    else if ( current->TokenType() == NIL )
+      cout << "()" << endl ;
+    else
+      cout << current->Content() << endl ;
+    return ;
+  } // else
+
+  return ;
+
+} // PrettyPrinter()
+
+void Printer( TreeNode* expr ) {
+  if ( expr == NULL )
+    cout << "expr is NULL..." ;
+
+  PrettyPrinter( expr, true, 0 ) ;
+} // Printer()
+
 // =======主程式=======
 
 int main()
 {
-  TreeNode* InputExpr = NULL ;
-  cout << "Welcome to OurScheme!\n"  ;
-  cout << endl << "> " ;
   // int gNum = 0 ;
+  TreeNode* exprPtr = NULL ;
+  TreeNode* resultExpr = NULL ;
+  Environment* env = new Environment() ;
   Parser* parser = new Parser() ;
   bool end = false ;
 
   // cin >> gNum ;
+
+  cout << "Welcome to OurScheme!\n"  ;
+  cout << endl << "> " ;
 
   while ( ! end ) {
     
     parser->ReadSExp() ;
     gEndProgramFlag = parser->CheckExit() ;
     if ( ! ( gSyntaxErrorFlag || gEndOfFileFlag || gEndProgramFlag ) ) {
-      InputExpr = parser->Build( InputExpr ) ;
-      parser->Printer( InputExpr ) ;
+      exprPtr = parser->Build() ;
+      Printer( exprPtr ) ;
+      try {
+        resultExpr = env->Evaluate( exprPtr, 0 ) ;
+        Printer( resultExpr ) ;
+      } catch ( OurSchemeException e ) {
+        cout << e.mErrorMessage ;
+        if ( e.mErrorType == NON_LIST )
+          Printer( e.mExprToPrint ) ;
+        else
+          cout << endl ;
+
+      } // catch()
+
       cout << endl ;
       cout << "> " ;
     } // if()
@@ -933,8 +1294,8 @@ int main()
     
     // Reset
     parser->Reset() ;
-    delete InputExpr ;
-    InputExpr = NULL ;
+    delete exprPtr ;
+    exprPtr = NULL ;
     gSyntaxErrorFlag = false ;
 
   
