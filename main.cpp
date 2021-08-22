@@ -970,7 +970,7 @@ private:
   } // GetEvaluatedArgs()
 
   // Return args for quote
-  vector<TreeNode*> GetQuotedArgs( TreeNode* expr, int depth ) {
+  vector<TreeNode*> GetUnevaledArgs( TreeNode* expr, int depth ) {
     vector<TreeNode*> args ;
     for ( TreeNode* next = expr->mRight ; next != NULL  ; next = next->mRight ) {
       if ( next->NodeType() == CONS_NODE )
@@ -979,7 +979,55 @@ private:
     } // for()
 
     return args ;
-  } // GetQuotedArgs()
+  } // GetUnevaledArgs()
+
+  // compare two node
+  bool CheckEqual( TreeNode* arg1, TreeNode* arg2 ) {
+    string s1 = "" ;
+    string s2 = "" ;
+
+    if ( arg1->NodeType() == ATOM_NODE && arg2->NodeType() == ATOM_NODE ) {
+      s1 = arg1->Content() ;
+      s2 = arg2->Content() ;
+    } // if()
+    else if ( arg1->NodeType() == CONS_NODE && arg2->NodeType() == CONS_NODE )
+      ;
+    // 二者node type不一致
+    else
+      return false ;
+
+    // 開始比對
+    if ( s1 != s2 ) return false ;
+    
+    // arg1, arg2 往左走
+    if ( arg1->mLeft != NULL && arg2->mLeft != NULL ) {
+      // 底層傳回false就往上傳false
+      if ( ! CheckEqual( arg1->mLeft, arg2->mLeft ) )
+        return false ;
+    } // if()
+    // 兩邊都到底
+    else if ( arg1->mLeft == NULL && arg2->mLeft == NULL )
+      ;
+    // 兩邊不一致
+    else
+      return false ;
+
+    // arg1, arg2 往右走
+    if ( arg1->mRight != NULL && arg2->mRight != NULL ) {
+      // 底層傳回false就往上傳false
+      if ( ! CheckEqual( arg1->mRight, arg2->mRight ) )
+        return false ;
+    } // if()
+    // 兩邊都到底
+    else if ( arg1->mRight == NULL && arg2->mRight == NULL )
+      ;
+    // 兩邊不一致
+    else
+      return false ;
+
+    return true ;
+
+  } // CheckEqual()
 
 public:
   friend class OurSchemeException ;
@@ -1063,10 +1111,12 @@ public:
 
           // SYM is 'if', 'and', 'or'
           // these three can get unvaluated argument
-          else if ( sym == "if" || sym == "and" || sym == "or" ) {
-            cout << "Not implement yet..." << endl ;
-            // check number of args
-            // eval
+          else if ( sym == "if" || sym == "and" || sym == "or" || sym == "quote" ) {
+            vector<TreeNode*> args = GetUnevaledArgs( expr, depth ) ;
+
+            if ( sym == "and" ) return Eval_and( firstArg, args, depth ) ;
+            else if ( sym == "or" ) return Eval_or( firstArg, args, depth ) ;
+            else if ( sym == "quote" )  return Eval_quote( firstArg, args ) ;
             // return result
 
           } // else if()
@@ -1092,14 +1142,12 @@ public:
             pmtPredictMap.insert( { "boolean?", 9 } ) ;
             pmtPredictMap.insert( { "symbol?", 10 } ) ;
 
-            if ( sym != "quote" )
+            if ( sym == "quote" || sym == "and" || sym == "or" )
+              args = GetUnevaledArgs( expr, depth ) ;
+            else
               args = GetEvaluatedArgs( expr, depth ) ;
 
             if ( sym == "cons" )  return Eval_cons( firstArg, args ) ;
-            else if ( sym == "quote" ) { 
-              args = GetQuotedArgs( expr, depth ) ;
-              return Eval_quote( firstArg, args ) ;
-            } // else if()
             else if ( sym == "list" ) return Eval_list( firstArg, args ) ;
             else if ( sym == "car" || sym == "cdr" )
               return Eval_partAccessor( firstArg, args ) ;
@@ -1121,6 +1169,9 @@ public:
             else if ( sym == "string>?" ) return Eval_stringCompare( firstArg, args ) ;
             else if ( sym == "string<?" ) return Eval_stringCompare( firstArg, args ) ;
             else if ( sym == "string=?" ) return Eval_stringCompare( firstArg, args ) ;
+            else if ( sym == "eqv?" ) return Eval_eqv( firstArg, args ) ;
+            else if ( sym == "equal?" ) return Eval_equal( firstArg, args ) ;
+            
           } // else
 
         } // if()
@@ -1752,6 +1803,95 @@ public:
 
     return ans ;
   } // Eval_stringCompare()
+
+  TreeNode* Eval_and( TreeNode* cmd, vector<TreeNode*> args, int depth ) {
+
+    if ( args.size() < 2 )
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+
+    TreeNode* result = new TreeNode() ;
+
+    for ( int i = 0 ; i < args.size() ; i ++ ) {
+      result = Evaluate( args.at( i ), depth+1 ) ;
+
+      if ( result->NodeType() == ATOM_NODE && result->TokenType() == NIL )
+        return result ;
+
+    } // for()
+
+    return result ;
+
+  } // Eval_and()
+
+  TreeNode* Eval_or( TreeNode* cmd, vector<TreeNode*> args, int depth ) {
+    if ( args.size() < 2 )
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+
+    TreeNode* result = new TreeNode() ;
+
+    for ( int i = 0 ; i < args.size() ; i ++ ) {
+      result = Evaluate( args.at( i ), depth+1 ) ;
+
+      // 若result非nil
+      if ( result->TokenType() != NIL )
+        return result ;
+
+    } // for()
+
+    return result ;
+
+  } // Eval_or()
+
+  TreeNode* Eval_eqv( TreeNode* cmd, vector<TreeNode*> args ) {
+    if ( args.size() != 2 )
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    
+
+    // 兩個atom(not quote and not string)的content(text-string)一樣
+    // 或是ar1 == arg2 ( 指向相同位置 ) ;
+    bool result = false ;
+    TreeNode* arg1 = args.at( 0 ) ;
+    TreeNode* arg2 = args.at( 1 ) ;
+
+    if ( arg1 == arg2 )
+      result = true ;
+    else {
+      // 檢查arg1的wrong type error
+      if ( arg1->NodeType() != ATOM_NODE || arg1->TokenType() == STRING )
+        throw OurSchemeException( WRONG_ARG_TYPE, arg1, cmd ) ;
+      // 檢查arg2的wrong type error
+      else if ( arg2->NodeType() != ATOM_NODE || arg2->TokenType() == STRING )
+        throw OurSchemeException( WRONG_ARG_TYPE, arg2, cmd ) ;
+
+      else if ( arg1->Content() == arg2->Content() )
+        result = true ;
+
+    } // else()
+
+    TreeNode* ans = new TreeNode() ;
+
+    if ( result ) ans->InitAtom( "#t", T ) ;
+    else ans->InitAtom( "nil", NIL ) ;
+
+    return ans ;
+  } // Eval_eqv()
+
+  TreeNode* Eval_equal( TreeNode* cmd, vector<TreeNode*> args ) {
+    if ( args.size() != 2 )
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+
+    
+    TreeNode* arg1 = args.at( 0 ) ;
+    TreeNode* arg2 = args.at( 1 ) ;
+    bool result = CheckEqual( arg1, arg2 ) ;
+
+    TreeNode* ans = new TreeNode() ;
+
+    if ( result ) ans->InitAtom( "#t", T ) ;
+    else ans->InitAtom( "nil", NIL ) ;
+
+    return ans ;
+  } // Eval_equal()
 
 }; // class Environment
 
