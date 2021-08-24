@@ -9,7 +9,7 @@
 # include <map>
 using namespace std ;
 
-# define CMDNUM 38 
+# define CMDNUM 39 
 // ===列舉、結構區===
 string gTokenTypeMap[] = { "INIT_TYPE", "LP", "RP", "INT", "FLOAT", "STRING", "DOT",
                            "NIL", "T", "QUOTE", "SYMBOL" } ;
@@ -29,12 +29,12 @@ string gSystemCmd[ CMDNUM ] =
   "cons", "list", "quote", "define", "car", "cdr","atom?", "pair?", "list?", "null?",
   "integer?", "real?", "number?", "string?", "boolean?", "symbol?", "+", "-", "*", "/",
   "not", "and", "or", ">", ">=", "<", "<=", "=", "string-append", "string>?",
-  "string<?", "string=?", "eqv?", "equal?", "begin", "if", "cond", "clean-environment"
+  "string<?", "string=?", "eqv?", "equal?", "begin", "if", "cond", "clean-environment", "exit"
 } ;
 
 enum ErrorType {
   EMPTY, UNBND_SYM, NON_LIST, APLY_NON_FUN, LEVL, NUM_OF_ARGS, WRONG_ARG_TYPE,
-  DIV_ZERO
+  DIV_ZERO, NO_RETURN_VAL, FORMAT_ERR
 };
 // ===全域變數區===
 bool gSyntaxErrorFlag = false ;
@@ -799,14 +799,15 @@ public:
 
   OurSchemeException( ErrorType eT, string str ) {
     mErrorType = eT ;
-    
+    mExprToPrint = NULL ;
+
     if ( eT == LEVL ) {
       if ( str == "clean-environment" ) str = "CLEAN-ENVIRONMENT" ;
       else if ( str == "exit" ) str = "EXIT" ;
       else if ( str == "define" ) str = "DEFINE" ;
       else cout << "ERROR[]: line 808...." << endl ;
 
-      mErrorMessage = "ERROR (level of" + str + ")" ;
+      mErrorMessage = "ERROR (level of " + str + ")" ;
     } // else if()
       
 
@@ -826,6 +827,8 @@ public:
       mErrorMessage = "ERROR (incorrect number of arguments) : " ;
     else if ( eT == DIV_ZERO )
       mErrorMessage = "ERROR (division by zero) : " ;
+    else if ( eT == NO_RETURN_VAL )
+      mErrorMessage = "ERROR (no return value) : " ;
     
   } // OurSchemeException()
 
@@ -836,7 +839,10 @@ public:
 
     if ( eT == WRONG_ARG_TYPE )
       mErrorMessage = "ERROR (" + commandStr + " with incorrect argument type) : " ;
-
+    else if ( eT == FORMAT_ERR && commandStr == "cond" )
+      mErrorMessage = "ERROR (COND format) : " ;
+    else if ( eT == FORMAT_ERR && commandStr == "define" )
+      mErrorMessage = "ERROR (DEFINE format) : " ;
     // if ( eT == WRONG_ARG_TYPE && cmd->Content() == "car" ) {
     //   mErrorMessage = "ERROR (car" ;
     //   mErrorMessage += " with incorrect argument type) : " ;
@@ -909,7 +915,7 @@ private:
   TreeNode* mResultPrt ;
   map<string, int> mCommandMap ;
   map<string, TreeNode*> mSymBindingMap ;
-
+  map<string, int> mPredictionCmdMap ;
   // Return true if given string is a Internal Command
   bool HasCmd( string cmdStr ) {
     map<string, int>::iterator iter ;
@@ -970,7 +976,7 @@ private:
   } // GetEvaluatedArgs()
 
   // Return args for quote
-  vector<TreeNode*> GetUnevaledArgs( TreeNode* expr, int depth ) {
+  vector<TreeNode*> GetUnevaledArgs( TreeNode* expr ) {
     vector<TreeNode*> args ;
     for ( TreeNode* next = expr->mRight ; next != NULL  ; next = next->mRight ) {
       if ( next->NodeType() == CONS_NODE )
@@ -1029,6 +1035,35 @@ private:
 
   } // CheckEqual()
 
+  bool NumOfArgs_correct( TreeNode* cmd, int arg_num ) {
+
+    string sym = cmd->Content() ;
+
+    if ( sym == "cons" && arg_num == 2 ) return true ;
+    else if ( sym == "list" ) return true ;
+    else if ( arg_num == 1 && ( sym == "car" || sym == "cdr" ) ) return true ;
+    else if ( mPredictionCmdMap[ sym ] > 0 && arg_num == 1 ) return true ; 
+    else if ( sym == "not" && arg_num == 1 ) return true ;
+    else if ( sym == "+" && arg_num >= 2 ) return true ;
+    else if ( sym == "-" && arg_num >= 2 ) return true  ;
+    else if ( sym == "*" && arg_num >= 2 ) return true  ;
+    else if ( sym == "/" && arg_num >= 2 ) return true ;
+    else if ( sym == ">" && arg_num >= 2 ) return true ;
+    else if ( sym == "<" && arg_num >= 2 ) return true ;
+    else if ( sym == "=" && arg_num >= 2 ) return true  ;
+    else if ( sym == ">=" && arg_num >= 2 ) return true  ;
+    else if ( sym == "<=" && arg_num >= 2 ) return true  ;
+    else if ( sym == "string-append" && arg_num >= 2 ) return true  ;
+    else if ( sym == "string>?" && arg_num >= 2 ) return true  ;
+    else if ( sym == "string<?" && arg_num >= 2 ) return true  ;
+    else if ( sym == "string=?" && arg_num >= 2 ) return true  ;
+    else if ( sym == "eqv?" && arg_num == 2 ) return true ;
+    else if ( sym == "equal?" && arg_num == 2 ) return true  ;
+    else if ( sym == "clean-environment" && arg_num == 0 ) return true  ;
+    else if ( sym == "exit" && arg_num == 0 ) return true  ;
+    else return false ;
+
+  } // NumOfArgs_corret
 public:
   friend class OurSchemeException ;
   // Initializer
@@ -1036,6 +1071,17 @@ public:
     for ( int i = 0 ; i < CMDNUM ; i ++ ) {
       mCommandMap[ gSystemCmd[ i ] ] = i+1 ;
     } // for()
+
+    mPredictionCmdMap.insert( { "atom?", 1 } ) ;
+    mPredictionCmdMap.insert( { "pair?", 2 } ) ;
+    mPredictionCmdMap.insert( { "list?", 3 } ) ;
+    mPredictionCmdMap.insert( { "null?", 4 } ) ;
+    mPredictionCmdMap.insert( { "integer?", 5 } ) ;
+    mPredictionCmdMap.insert( { "real?", 6 } ) ;
+    mPredictionCmdMap.insert( { "number?", 7 } ) ;
+    mPredictionCmdMap.insert( { "string?", 8 } ) ;
+    mPredictionCmdMap.insert( { "boolean?", 9 } ) ;
+    mPredictionCmdMap.insert( { "symbol?", 10 } ) ;
 
   } // Environment()
 
@@ -1092,8 +1138,10 @@ public:
           // SO MUCH TO DO...
 
           // 將SYM設定成綁定的CMD
-          if ( boundToFunction )
+          if ( boundToFunction ) {
             sym =  GetBinding( sym )->Content() ;
+            firstArg = GetBinding( sym ) ;
+          } // if()
 
           // Level Error ( clean-environment or exit or define )
           if ( depth != 0 && ( sym == "clean-environment" || sym == "exit" || sym == "define" ) )
@@ -1101,22 +1149,21 @@ public:
 
           // SYM is 'define', 'cond'  ||    (proj.3) 'lambda', 'set!', 'let',
           else if ( sym == "define" || sym == "cond" ) {
-            cout << "Not implement yet..." << endl ;
-            // TO DO 檢查FORMAT
-            // 如果有ERROR
-            // check num of args
-            // 沒有ERROR -> do eval()
-            // return result
+            if ( sym == "define" ) return Eval_define( expr, firstArg, depth ) ;
+            else if ( sym == "cond" ) return Eval_cond( expr, firstArg, depth ) ;
           } // else if()
 
           // SYM is 'if', 'and', 'or'
           // these three can get unvaluated argument
-          else if ( sym == "if" || sym == "and" || sym == "or" || sym == "quote" ) {
-            vector<TreeNode*> args = GetUnevaledArgs( expr, depth ) ;
+          else if ( sym == "if" || sym == "and" || sym == "or" || sym == "quote" || sym == "begin" ) {
+            vector<TreeNode*> args = GetUnevaledArgs( expr ) ;
 
             if ( sym == "and" ) return Eval_and( firstArg, args, depth ) ;
             else if ( sym == "or" ) return Eval_or( firstArg, args, depth ) ;
             else if ( sym == "quote" )  return Eval_quote( firstArg, args ) ;
+            else if ( sym == "if" )  return Eval_if( expr, firstArg, args, depth ) ;
+            else if ( sym == "begin" )  return Eval_begin( expr, firstArg, args, depth ) ;
+            
             // return result
 
           } // else if()
@@ -1128,30 +1175,20 @@ public:
           // "not", ">", ">=", "<", "<=", "=", "string-append", "string>?",
           // "string<?", "string=?", "eqv?", "equal?", "begin"
           else {
-            // get args
+            // get args ( unevaluated )
             vector<TreeNode*> args ;
-            map<string, int> pmtPredictMap ;
-            pmtPredictMap.insert( { "atom?", 1 } ) ;
-            pmtPredictMap.insert( { "pair?", 2 } ) ;
-            pmtPredictMap.insert( { "list?", 3 } ) ;
-            pmtPredictMap.insert( { "null?", 4 } ) ;
-            pmtPredictMap.insert( { "integer?", 5 } ) ;
-            pmtPredictMap.insert( { "real?", 6 } ) ;
-            pmtPredictMap.insert( { "number?", 7 } ) ;
-            pmtPredictMap.insert( { "string?", 8 } ) ;
-            pmtPredictMap.insert( { "boolean?", 9 } ) ;
-            pmtPredictMap.insert( { "symbol?", 10 } ) ;
+            args = GetUnevaledArgs( expr ) ;
 
-            if ( sym == "quote" || sym == "and" || sym == "or" )
-              args = GetUnevaledArgs( expr, depth ) ;
+            if ( ! NumOfArgs_correct( firstArg, args.size() ) )
+              throw OurSchemeException( NUM_OF_ARGS, firstArg ) ; // ( first arg應該eval嗎)
             else
               args = GetEvaluatedArgs( expr, depth ) ;
 
-            if ( sym == "cons" )  return Eval_cons( firstArg, args ) ;
-            else if ( sym == "list" ) return Eval_list( firstArg, args ) ;
+            if ( sym == "cons" ) return Eval_cons( firstArg, args ) ;
+            else if ( sym == "list" ) return Eval_list(firstArg, args ) ;
             else if ( sym == "car" || sym == "cdr" )
               return Eval_partAccessor( firstArg, args ) ;
-            else if ( pmtPredictMap[ sym ] > 0 ) {
+            else if ( mPredictionCmdMap[ sym ] > 0 ) {
               cout << "Do predicate..." << endl ;
               return Eval_pmtPredicate( firstArg, args ) ;
             } // else if()
@@ -1171,6 +1208,8 @@ public:
             else if ( sym == "string=?" ) return Eval_stringCompare( firstArg, args ) ;
             else if ( sym == "eqv?" ) return Eval_eqv( firstArg, args ) ;
             else if ( sym == "equal?" ) return Eval_equal( firstArg, args ) ;
+            else if ( sym == "clean-environment" ) return Eval_cleanEnv( firstArg, args ) ;
+            else if ( sym == "exit" ) return Eval_exit( firstArg, args ) ;
             
           } // else
 
@@ -1179,10 +1218,10 @@ public:
         // SYM is NOT the name of known function
         else {
           if ( ! HasBinding( sym ) )
-            throw OurSchemeException( UNBND_SYM, sym ) ;
+            throw OurSchemeException( UNBND_SYM, firstArg ) ;
           else {
-            string boundSYM = GetBinding( sym )->Content() ;
-            throw OurSchemeException( APLY_NON_FUN, boundSYM ) ;
+            TreeNode* binding = GetBinding( sym ) ;
+            throw OurSchemeException( APLY_NON_FUN, binding ) ;
           } // else
 
         } // else
@@ -1191,7 +1230,8 @@ public:
 
       // first arg是一個( ... )
       else {
-
+        expr->mLeft = Evaluate( firstArg, depth+1 ) ;
+        return Evaluate( expr, depth ) ;
       } // else
 
     } // else
@@ -1216,8 +1256,8 @@ public:
   } // Eval_cons()
 
   TreeNode* Eval_quote( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 1 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 1 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     TreeNode* result =  args.at( 0 ) ;
     return result ;
@@ -1246,8 +1286,8 @@ public:
   } // Eval_list()
 
   TreeNode* Eval_partAccessor( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 1 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 1 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     if ( args.at( 0 )->NodeType() == ATOM_NODE )
       throw OurSchemeException( WRONG_ARG_TYPE, args.at( 0 ), cmd ) ;
@@ -1268,8 +1308,8 @@ public:
   } // Eval_partAccessor()
 
   TreeNode* Eval_pmtPredicate( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 1 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 1 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     bool result = false ;
     TreeNode *arg = args.at( 0 ) ;
@@ -1324,12 +1364,12 @@ public:
   } // Eval_pmtPredicate() ;
 
   TreeNode* Eval_not( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 1 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 1 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     TreeNode* result = new TreeNode() ;
     // arg不是f result就是false
-    if ( args.at( 0 )->NodeType() == CONS_NODE || args.at( 0 )->TokenType() == T)
+    if ( args.at( 0 )->NodeType() == CONS_NODE || args.at( 0 )->TokenType() != NIL )
       result->InitAtom( "nil", NIL ) ;
     else
       result->InitAtom( "#t", T ) ;
@@ -1339,8 +1379,8 @@ public:
   } // Eval_not()
 
   TreeNode* Eval_plus( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() < 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() < 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     int intResult = 0 ;
     float floatResult = 0 ;
@@ -1392,8 +1432,8 @@ public:
   } // Eval_plus
 
   TreeNode* Eval_minus( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() < 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() < 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     bool useFloat = false ;
     int intResult = 0 ;
@@ -1444,8 +1484,8 @@ public:
   } // Eval_minus
 
   TreeNode* Eval_multi( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() < 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() < 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     bool useFloat = false ;
     int intResult = 0 ;
@@ -1500,8 +1540,8 @@ public:
   } // Eval_multi
 
   TreeNode* Eval_devide( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() < 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() < 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     bool useFloat = false ;
     int intResult = 0 ;
@@ -1560,8 +1600,8 @@ public:
   } // Eval_devide
 
   TreeNode* Eval_greatThan( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     float num1, num2 ;
     TreeNode* result = new TreeNode() ;
@@ -1573,31 +1613,35 @@ public:
         throw OurSchemeException( WRONG_ARG_TYPE, current, cmd ) ;
     } // for()
 
+    for ( int i = 0 ; i+1 < args.size() ; i++ ) {
+      // 設定num1 num2
+      if ( args.at( i )->TokenType() == FLOAT )
+        num1 = args.at( i )->FloatValue() ;
+      else
+        num1 = args.at( i )->IntValue() ;
 
-    // 設定num1 num2
-    if ( args.at( 0 )->TokenType() == FLOAT )
-      num1 = args.at( 0 )->FloatValue() ;
-    else
-      num1 = args.at( 0 )->IntValue() ;
+      if ( args.at( i+1 )->TokenType() == FLOAT )
+        num2 = args.at( i+1 )->FloatValue() ;
+      else
+        num2 = args.at( i+1 )->IntValue() ;
 
-    if ( args.at( 1 )->TokenType() == FLOAT )
-      num2 = args.at( 1 )->FloatValue() ;
-    else
-      num2 = args.at( 1 )->IntValue() ;
-
-    // 設定result
-    if ( num1 > num2 )
-      result->InitAtom( "#t", T ) ;
-    else
-      result->InitAtom( "nil", NIL ) ;
-
+      // 設定result
+      if ( num1 > num2 )
+        ;
+      else {
+        result->InitAtom( "nil", NIL ) ;
+        return result ;
+      } // else
+    }
+    
+    result->InitAtom( "#t", T ) ;
     return result ;
 
   } // Eval_greatThan()
 
   TreeNode* Eval_lessThan( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     float num1, num2 ;
     TreeNode* result = new TreeNode() ;
@@ -1609,30 +1653,34 @@ public:
         throw OurSchemeException( WRONG_ARG_TYPE, current, cmd ) ;
     } // for()
 
+    for ( int i = 0 ; i+1 < args.size() ; i++ ) {
+      // 設定num1 num2
+      if ( args.at( i )->TokenType() == FLOAT )
+        num1 = args.at( i )->FloatValue() ;
+      else
+        num1 = args.at( i )->IntValue() ;
 
-    // 設定num1 num2
-    if ( args.at( 0 )->TokenType() == FLOAT )
-      num1 = args.at( 0 )->FloatValue() ;
-    else
-      num1 = args.at( 0 )->IntValue() ;
+      if ( args.at( i+1 )->TokenType() == FLOAT )
+        num2 = args.at( i+1 )->FloatValue() ;
+      else
+        num2 = args.at( i+1 )->IntValue() ;
 
-    if ( args.at( 1 )->TokenType() == FLOAT )
-      num2 = args.at( 1 )->FloatValue() ;
-    else
-      num2 = args.at( 1 )->IntValue() ;
+      // 設定result
+      if ( num1 < num2 )
+        ;
+      else {
+        result->InitAtom( "nil", NIL ) ;
+        return result ;
+      } // else
+    } // for()
 
-    // 設定result
-    if ( num1 < num2 )
-      result->InitAtom( "#t", T ) ;
-    else
-      result->InitAtom( "nil", NIL ) ;
-
+    result->InitAtom( "#t", T ) ;
     return result ;
   } // Eval_lessThan()
 
   TreeNode* Eval_compareEqual( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     float num1, num2 ;
     TreeNode* result = new TreeNode() ;
@@ -1644,30 +1692,35 @@ public:
         throw OurSchemeException( WRONG_ARG_TYPE, current, cmd ) ;
     } // for()
 
+    for ( int i = 0 ; i+1 < args.size() ; i++ ) {
+      // 設定num1 num2
+      if ( args.at( i )->TokenType() == FLOAT )
+        num1 = args.at( i )->FloatValue() ;
+      else
+        num1 = args.at( i )->IntValue() ;
 
-    // 設定num1 num2
-    if ( args.at( 0 )->TokenType() == FLOAT )
-      num1 = args.at( 0 )->FloatValue() ;
-    else
-      num1 = args.at( 0 )->IntValue() ;
+      if ( args.at( i+1 )->TokenType() == FLOAT )
+        num2 = args.at( i+1 )->FloatValue() ;
+      else
+        num2 = args.at( i+1 )->IntValue() ;
 
-    if ( args.at( 1 )->TokenType() == FLOAT )
-      num2 = args.at( 1 )->FloatValue() ;
-    else
-      num2 = args.at( 1 )->IntValue() ;
+      // 設定result
+      if ( num1 == num2 )
+        ;
+      else {
+        result->InitAtom( "nil", NIL ) ;
+        return result ;
+      } // else()
 
-    // 設定result
-    if ( num1 == num2 )
-      result->InitAtom( "#t", T ) ;
-    else
-      result->InitAtom( "nil", NIL ) ;
+    } // for()
 
+    result->InitAtom( "#t", T ) ;
     return result ;
   } // Eval_compareEqual()
 
   TreeNode* Eval_greatAndEqual( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     float num1, num2 ;
     TreeNode* result = new TreeNode() ;
@@ -1679,30 +1732,35 @@ public:
         throw OurSchemeException( WRONG_ARG_TYPE, current, cmd ) ;
     } // for()
 
+    for ( int i = 0 ; i+1 < args.size() ; i++ ) {
+      // 設定num1 num2
+      if ( args.at( i )->TokenType() == FLOAT )
+        num1 = args.at( i )->FloatValue() ;
+      else
+        num1 = args.at( i )->IntValue() ;
 
-    // 設定num1 num2
-    if ( args.at( 0 )->TokenType() == FLOAT )
-      num1 = args.at( 0 )->FloatValue() ;
-    else
-      num1 = args.at( 0 )->IntValue() ;
+      if ( args.at( i+1 )->TokenType() == FLOAT )
+        num2 = args.at( i+1 )->FloatValue() ;
+      else
+        num2 = args.at( i+1 )->IntValue() ;
 
-    if ( args.at( 1 )->TokenType() == FLOAT )
-      num2 = args.at( 1 )->FloatValue() ;
-    else
-      num2 = args.at( 1 )->IntValue() ;
+      // 設定result
+      if ( num1 >= num2 )
+        ;
+      else {
+        result->InitAtom( "nil", NIL ) ;
+        return result ;
+      } // else()
 
-    // 設定result
-    if ( num1 >= num2 )
-      result->InitAtom( "#t", T ) ;
-    else
-      result->InitAtom( "nil", NIL ) ;
+    } // for()
 
+    result->InitAtom( "#t", T ) ;
     return result ;
   } // Eval_greatAndEqual()
 
   TreeNode* Eval_lessAndEqual( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     float num1, num2 ;
     TreeNode* result = new TreeNode() ;
@@ -1714,30 +1772,35 @@ public:
         throw OurSchemeException( WRONG_ARG_TYPE, current, cmd ) ;
     } // for()
 
+    for ( int i = 0 ; i+1 < args.size() ; i++ ) {
+      // 設定num1 num2
+      if ( args.at( i )->TokenType() == FLOAT )
+        num1 = args.at( i )->FloatValue() ;
+      else
+        num1 = args.at( i )->IntValue() ;
 
-    // 設定num1 num2
-    if ( args.at( 0 )->TokenType() == FLOAT )
-      num1 = args.at( 0 )->FloatValue() ;
-    else
-      num1 = args.at( 0 )->IntValue() ;
+      if ( args.at( i+1 )->TokenType() == FLOAT )
+        num2 = args.at( i+1 )->FloatValue() ;
+      else
+        num2 = args.at( i+1 )->IntValue() ;
 
-    if ( args.at( 1 )->TokenType() == FLOAT )
-      num2 = args.at( 1 )->FloatValue() ;
-    else
-      num2 = args.at( 1 )->IntValue() ;
+      // 設定result
+      if ( num1 <= num2 )
+        ;
+      else {
+        result->InitAtom( "nil", NIL ) ;
+        return result ;
+      } // else()
 
-    // 設定result
-    if ( num1 <= num2 )
-      result->InitAtom( "#t", T ) ;
-    else
-      result->InitAtom( "nil", NIL ) ;
+    } // for()
 
+    result->InitAtom( "#t", T ) ;
     return result ;
   } // Eval_lessAndEqual()
 
   TreeNode* Eval_stringAppend( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() < 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() < 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     TreeNode* ans = new TreeNode() ;
     string result = "" ;
@@ -1761,8 +1824,8 @@ public:
   } // Eval_stringAppend()
 
   TreeNode* Eval_stringCompare( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() < 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() < 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     string s1, s2 ;
     string command = cmd->Content() ;
@@ -1843,8 +1906,8 @@ public:
   } // Eval_or()
 
   TreeNode* Eval_eqv( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
     
 
     // 兩個atom(not quote and not string)的content(text-string)一樣
@@ -1855,17 +1918,18 @@ public:
 
     if ( arg1 == arg2 )
       result = true ;
+    // 都做compare 但只有atom會是#t 且比較text
     else {
-      // 檢查arg1的wrong type error
-      if ( arg1->NodeType() != ATOM_NODE || arg1->TokenType() == STRING )
-        throw OurSchemeException( WRONG_ARG_TYPE, arg1, cmd ) ;
+      if ( arg1->NodeType() == CONS_NODE || arg1->TokenType() == STRING )
+        result = false ;
       // 檢查arg2的wrong type error
-      else if ( arg2->NodeType() != ATOM_NODE || arg2->TokenType() == STRING )
-        throw OurSchemeException( WRONG_ARG_TYPE, arg2, cmd ) ;
+      else if ( arg2->NodeType() == CONS_NODE || arg2->TokenType() == STRING )
+        result = false ;
 
-      else if ( arg1->Content() == arg2->Content() )
-        result = true ;
-
+      else {
+        if ( arg1->Content() == arg2->Content() )
+          result = true ;
+      } // else()
     } // else()
 
     TreeNode* ans = new TreeNode() ;
@@ -1877,8 +1941,8 @@ public:
   } // Eval_eqv()
 
   TreeNode* Eval_equal( TreeNode* cmd, vector<TreeNode*> args ) {
-    if ( args.size() != 2 )
-      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+    // if ( args.size() != 2 )
+    //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
     
     TreeNode* arg1 = args.at( 0 ) ;
@@ -1892,6 +1956,243 @@ public:
 
     return ans ;
   } // Eval_equal()
+  // expr* is only for print out error message(NO_RETURN_VAL)
+  TreeNode* Eval_if( TreeNode* expr, TreeNode* cmd, vector<TreeNode*> args, int depth ) {
+    if ( args.size() != 2 && args.size() != 3 )
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+
+    TreeNode* cond = Evaluate( args.at( 0 ), depth+1 ) ;
+
+    // 沒有nil的condition error
+    if ( cond->TokenType() == NIL && args.size() == 2 )
+      throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+    else if ( cond->TokenType() == NIL )
+      return Evaluate( args.at( 2 ), depth+1 ) ;
+    else
+      return Evaluate( args.at( 1 ), depth+1 ) ;
+
+  } // Eval_if()
+
+  TreeNode* Eval_cond( TreeNode* expr, TreeNode* cmd, int depth ) {
+    // Format : ( cond 1-or-more-{list ( >= 2 SEXPR) })
+    vector<TreeNode*> args = GetUnevaledArgs( expr ) ;
+
+    // check arg num
+    if ( args.size() < 1 )
+      throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+    // 逐一取arg-n的sub-expression
+    for ( int i = 0 ; i < args.size() ; i ++ ) {
+      TreeNode* current = args.at( i ) ;
+
+      // 先判斷arg-n是否有non-list error
+      TreeNode* peek ;
+      for ( peek = current->mRight ; peek != NULL ; peek = peek->mRight ) {
+        if ( peek->NodeType() == ATOM_NODE && peek->TokenType() != NIL )
+          // 這邊不丟non-list error 而是format
+          throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+      } // for()
+
+      // 確定是list後 取得arg-n的sub-expressions
+      vector<TreeNode*> subExpressions = GetUnevaledArgs( current ) ;
+      // 若current的右側沒有任何sub-exprssion 則錯誤
+      if ( subExpressions.size() < 1 )
+        throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+    } // for()
+
+    // 確認無format error 開始eval
+    for ( int i = 0 ; i < args.size() ; i ++ ) {
+      TreeNode* current = args.at( i ) ;
+      vector<TreeNode*> subExpressions = GetUnevaledArgs( current ) ;
+
+      // 若condition成立 依序eval後面的sub-expressions
+      TreeNode* lastEval ;
+      // else的case
+      if ( i == args.size() - 1 && current->mLeft->Content() == "else" ) {
+        for ( int j = 0 ; j < subExpressions.size() ; j++ ) {
+          lastEval = Evaluate( subExpressions.at( j ), depth+2 ) ;
+        } // for()
+        return lastEval ;
+      } // if()
+
+      // 其他
+      TreeNode* condition =  Evaluate( current->mLeft, depth+2 ) ;
+      if ( condition->NodeType() == CONS_NODE || condition->TokenType() != NIL ) {
+        for ( int j = 0 ; j < subExpressions.size() ; j++ ) {
+          lastEval = Evaluate( subExpressions.at( j ), depth+2 ) ;
+        } // for()
+        return lastEval ;
+      } // if()
+
+    } // for()
+
+    // throw no return value
+    throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+    
+  } // Eval_cond
+
+  TreeNode* Eval_define( TreeNode* expr, TreeNode* cmd, int depth ){
+    // num-of-args : 2
+    // can't redefine system primitives
+    // check format
+    // num-of-arg-err 視為format error
+
+    // 檢查format
+    vector<TreeNode*> args = GetUnevaledArgs( expr ) ;
+
+    if ( args.size() != 2 )
+      throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+    TreeNode* arg1 = args.at( 0 ) ;
+    TreeNode* arg2 = args.at( 1 ) ;
+    
+    // arg1只能是symbol
+    if ( arg1->NodeType() == CONS_NODE || arg1->TokenType() != SYMBOL )
+      throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+    // arg1是一個system primitive
+    if ( HasCmd( arg1->Content() ) )
+      throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+    // 如果arg2的eval有誤 不能redefine
+    // 所以要先eval arg2
+    arg2 = Evaluate( arg2, depth+1 ) ;
+
+    // arg2 eval過後 處理binding
+    if ( HasBinding( arg1->Content() ) ) {
+      mSymBindingMap.erase( arg1->Content() ) ;
+    }
+
+    mSymBindingMap.insert( { arg1->Content(), arg2 } ) ;
+
+    return arg1 ;
+
+  } // Eval_define()
+
+  TreeNode* Eval_begin( TreeNode* expr, TreeNode* cmd, vector<TreeNode*> args, int depth ) {
+    if ( args.size() == 0 )
+      throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
+
+
+    TreeNode* lastEvaluated ;
+
+    for ( int i = 0 ; i < args.size() ; i++ ) {
+      lastEvaluated = Evaluate( args.at( i ), depth+1 ) ;
+    } // for()
+
+
+    return lastEvaluated ;
+
+  } // Eval_begin()
+
+  TreeNode* Eval_cleanEnv( TreeNode* cmd, vector<TreeNode*> args ) {
+    TreeNode* result = new TreeNode() ;
+
+    mSymBindingMap.clear() ;
+
+    result->InitAtom( "environment-cleaned", SYMBOL ) ;
+    return result ;
+
+  } // Eval_cleanEnv()
+
+  TreeNode* Eval_exit( TreeNode* cmd, vector<TreeNode*> args ) {
+    TreeNode* result = new TreeNode() ;
+    result->InitAtom( "exit..", SYMBOL ) ;
+    return result ;
+
+  } // Eval_exit()
+
+  void Result_Printer( TreeNode* expr ) {
+    if ( expr == NULL )
+    cout << "expr is NULL..." ;
+
+    Result_PrettyPrinter( expr, true, 0 ) ;
+  } // Result_Printer()
+
+  void Result_PrettyPrinter( TreeNode* current, bool expr, int spaces ) {
+    
+  string spaceStr = "" ;
+  for ( int i = 0 ; i < spaces ; i ++ ) {
+    spaceStr += " " ;
+  } // for()
+
+  // 要印括號
+  if ( expr && current->NodeType() == CONS_NODE ) {
+    
+    cout << "( " ;
+    PrettyPrinter( current->mLeft, true, spaces+2 ) ;
+    
+    // TODO
+    if ( current->mRight->NodeType() == ATOM_NODE &&
+         current->mRight->TokenType() != NIL ) {
+      cout << spaceStr << "  .\n" << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // if()
+    else if ( current->mRight->NodeType() == CONS_NODE ) {
+      cout << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // else if()
+    else {
+    ;
+    } // else
+
+    cout << spaceStr << ")" << endl ;
+
+    return ;
+  } // if()
+
+  // cons-node
+  else if ( current->NodeType() == CONS_NODE ) {
+    PrettyPrinter( current->mLeft, true, spaces+2 ) ;
+    // 不印dot
+    if ( current->mRight->NodeType() == CONS_NODE ) {
+      cout << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // if()
+
+    // 要印dot 右邊不能是nil
+    else if ( current->mRight->TokenType() != NIL ) {
+      cout << spaceStr << "  ." << endl << spaceStr << "  " ;
+      PrettyPrinter( current->mRight, false, spaces ) ;
+    } // else if()
+    else {
+      ;
+    } // else
+
+    return ;
+
+  } // else if()
+  // ATOM-NODE
+  else {
+    if ( HasCmd( current->Content() ) ) {
+      string s = "#<procedure " + current->Content() + ">" ;
+      cout << s << endl ;
+    } // if()
+    else if( HasBinding( current->Content() ) ) {
+      TreeNode* binding = GetBinding( current->Content() ) ;
+      string s = "" ;
+      if ( binding->NodeType() == CONS_NODE )
+        s = current->Content() + " defined" ;
+      else
+        string s = "#<procedure " + binding->Content() + ">" ;
+        
+      cout << s << endl ;
+    } // else if()
+    else if ( current->TokenType() == INT )
+      cout << current->IntValue() << endl ;
+    else if ( current->TokenType() == FLOAT )
+      printf( "%.3f\n", current->FloatValue() ) ;
+    else if ( current->TokenType() == NIL )
+      cout << "nil" << endl ;
+    else
+      cout << current->Content() << endl ;
+    return ;
+  } // else
+
+  return ;
+
+} // Result_PrettyPrinter()
 
 }; // class Environment
 
@@ -1903,18 +2204,6 @@ void PrettyPrinter( TreeNode* current, bool expr, int spaces ) {
   for ( int i = 0 ; i < spaces ; i ++ ) {
     spaceStr += " " ;
   } // for()
-
-  // 判斷是否要印括號
-  // if ( current->NodeType() == CONS_NODE && expr ) {
-  //   // 假expr
-  //   if ( current->mLeft->NodeType() == CONS_NODE &&
-  //    current->mRight->NodeType() == ATOM_NODE &&
-  //    current->mRight->TokenType() == NIL ) {
-  //   expr = false ;
-  //   spaces -= 2 ;
-  //   } // if()
-
-  // } // if()
 
   // 要印括號
   if ( expr && current->NodeType() == CONS_NODE ) {
@@ -2008,14 +2297,14 @@ int main()
     gEndProgramFlag = parser->CheckExit() ;
     if ( ! ( gSyntaxErrorFlag || gEndOfFileFlag || gEndProgramFlag ) ) {
       exprPtr = parser->Build() ;
-      Printer( exprPtr ) ;
+      // Printer( exprPtr ) ;
       try {
         resultExpr = env->Evaluate( exprPtr, 0 ) ;
-        Printer( resultExpr ) ;
+        env->Result_Printer( resultExpr ) ;
       } catch ( OurSchemeException e ) {
         cout << e.mErrorMessage ;
         if ( e.mExprToPrint != NULL )
-          Printer( e.mExprToPrint ) ;
+          env->Result_Printer( e.mExprToPrint ) ;
         else
           cout << endl ;
 
