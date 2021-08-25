@@ -9,7 +9,7 @@
 # include <map>
 using namespace std ;
 
-# define CMDNUM 39 
+# define CMDNUM 40
 // ===列舉、結構區===
 string gTokenTypeMap[] = { "INIT_TYPE", "LP", "RP", "INT", "FLOAT", "STRING", "DOT",
                            "NIL", "T", "QUOTE", "SYMBOL" } ;
@@ -29,7 +29,8 @@ string gSystemCmd[ CMDNUM ] =
   "cons", "list", "quote", "define", "car", "cdr","atom?", "pair?", "list?", "null?",
   "integer?", "real?", "number?", "string?", "boolean?", "symbol?", "+", "-", "*", "/",
   "not", "and", "or", ">", ">=", "<", "<=", "=", "string-append", "string>?",
-  "string<?", "string=?", "eqv?", "equal?", "begin", "if", "cond", "clean-environment", "exit"
+  "string<?", "string=?", "eqv?", "equal?", "begin", "if", "cond", "clean-environment", "exit",
+  "let"
 } ;
 
 enum ErrorType {
@@ -857,6 +858,8 @@ public:
       mErrorMessage = "ERROR (COND format) : " ;
     else if ( eT == FORMAT_ERR && commandStr == "define" )
       mErrorMessage = "ERROR (DEFINE format) : " ;
+    else if ( eT == FORMAT_ERR && commandStr == "let" )
+      mErrorMessage = "ERROR (LET format) : " ;
     // if ( eT == WRONG_ARG_TYPE && cmd->Content() == "car" ) {
     //   mErrorMessage = "ERROR (car" ;
     //   mErrorMessage += " with incorrect argument type) : " ;
@@ -930,6 +933,7 @@ private:
   map<string, int> mCommandMap ;
   map<string, TreeNode*> mSymBindingMap ;
   map<string, int> mPredictionCmdMap ;
+  map<string, TreeNode*> mLocalVarMap ;
   // Return true if given string is a Internal Command
   bool HasCmd( string cmdStr ) {
     map<string, int>::iterator iter ;
@@ -943,10 +947,13 @@ private:
   } // HasCmd()  
   // Return true if Symbol is bound
   bool HasBinding( string symStr ) {
-    map<string, TreeNode*>::iterator iter ;
-    iter = mSymBindingMap.find( symStr ) ;
-    if ( iter == mSymBindingMap.end() ) return false ;
-    else return true ;
+    map<string, TreeNode*>::iterator iter1 ;
+    map<string, TreeNode*>::iterator iter2 ;
+    iter1 = mSymBindingMap.find( symStr ) ;
+    iter2 = mLocalVarMap.find( symStr ) ;
+    if ( iter1 != mSymBindingMap.end() ) return true ;
+    else if ( iter2 != mLocalVarMap.end( ) ) return true ;
+    else return false ;
   } // HasBinding()
   // Return Bound TreeNode
   TreeNode* GetBinding( string symStr ) {
@@ -957,7 +964,11 @@ private:
     else {
       map<string, TreeNode*>::iterator iter ;
       iter = mSymBindingMap.find( symStr ) ;
-      return mSymBindingMap[ symStr ] ;
+      if ( iter != mSymBindingMap.end() )
+        return mSymBindingMap[ symStr ] ;
+      else
+        return mLocalVarMap[ symStr ] ;
+      
     } // else
   } // GetBinding()
   // Return number of args
@@ -1169,9 +1180,11 @@ public:
             throw OurSchemeException( LEVL, sym ) ;
 
           // SYM is 'define', 'cond'  ||    (proj.3) 'lambda', 'set!', 'let',
-          else if ( sym == "define" || sym == "cond" ) {
+          else if ( sym == "define" || sym == "cond" || sym == "let" ) {
             if ( sym == "define" ) return Eval_define( expr, firstArg, depth ) ;
             else if ( sym == "cond" ) return Eval_cond( expr, firstArg, depth ) ;
+            // let的format error需要main-expr
+            else if ( sym == "let" ) return Eval_let( expr, firstArg, depth ) ;
           } // else if()
 
           // SYM is 'if', 'and', 'or'
@@ -2128,6 +2141,86 @@ public:
     return result ;
 
   } // Eval_exit()
+
+  TreeNode* Eval_let( TreeNode* expr, TreeNode* cmd, int depth ) {
+    // 首先取得args (unevaled)
+    vector<TreeNode*> args = GetUnevaledArgs( expr ) ;
+    vector<TreeNode*> pairs ;
+
+    // 檢查top level的arg數量
+    if ( args.size() < 2 )
+      throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+    TreeNode* arg1 = args.at( 0 ) ;
+    // ERROR::arg1是一個非()的atom
+    if ( arg1->NodeType() == ATOM_NODE && arg1->TokenType() != NIL )
+      throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+    // 檢查arg1的error
+    // 順便收集sub-expressions
+    
+    for ( TreeNode* peek = arg1 ; peek != NULL ; peek = peek->mRight ) {
+      if ( peek->NodeType() == ATOM_NODE && peek->TokenType() != NIL )
+        throw( FORMAT_ERR, expr, cmd ) ;
+      
+      if ( peek->NodeType() == ATOM_NODE ) // 右下角的nil atom
+        ;
+      else {
+        pairs.push_back( peek->mLeft ) ;
+
+        // 檢查pair的合法
+        TreeNode* pair = peek->mLeft ;
+        // pair非pair
+        if ( pair->mRight == NULL || pair->mRight->NodeType() != CONS_NODE )
+          throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+        // 檢查pair左邊是不是symbol
+        else if ( pair->mLeft == NULL || pair->mLeft->NodeType() != ATOM_NODE ||
+                  pair->mLeft->TokenType() != SYMBOL )
+          throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+        
+        // 檢查pair的non-list 和 數量
+        int counterForElement = 0 ;
+        for ( TreeNode* nextRight = pair ; nextRight != NULL ; nextRight = nextRight->mRight ) {
+          // 檢查pair的non-list
+          if ( nextRight->NodeType() == ATOM_NODE && nextRight->TokenType() != NIL )
+            throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+          // 要避免加到nil atom
+          if ( nextRight->NodeType() == CONS_NODE )
+            counterForElement ++ ;
+
+        } // for()
+
+        // symbol + 1*expr = 2
+        if ( counterForElement != 2 )
+          throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+      } // for()
+
+    } // for()
+
+    // biding pairs的值
+    for ( int i = 0 ; i < pairs.size() ; i++ ) {
+      TreeNode* current = pairs.at( i ) ;
+      TreeNode* sym = current->mLeft ;
+      TreeNode* subExpr = current->mRight->mLeft ;
+
+      
+      string symStr = sym->Content() ;
+      // cout << "binding sym: " << symStr << endl ;
+      mLocalVarMap[ symStr ] = Evaluate( subExpr, depth+2 ) ;
+    } // for()
+
+    // eval arg2~argn
+    TreeNode* lastEvaled ;
+    for ( int i = 1 ; i < args.size() ; i++ ) {
+      lastEvaled = Evaluate( args.at( i ), depth+1 ) ;
+    } // for()
+
+    mLocalVarMap.clear() ;
+
+    return lastEvaled ;
+
+  } // Eval_let()
 
   void Result_Printer( TreeNode* expr ) {
     if ( expr == NULL )
