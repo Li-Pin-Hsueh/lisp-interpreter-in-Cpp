@@ -933,7 +933,6 @@ private:
 string mName ;
 vector<TreeNode*> mBodyStatments ;
 vector<TreeNode*> mParams ;
-vector<TreeNode*> mArguments ;
 
 
 public:
@@ -941,14 +940,12 @@ public:
     mName = "lambda" ;
     mBodyStatments.clear() ;
     mParams.clear() ;
-    mArguments.clear() ;
   } // EnvFunction()
 
-  EnvFunction( string name, vector<TreeNode*> body, vector<TreeNode*> params, vector<TreeNode*> args ) {
+  EnvFunction( string name, vector<TreeNode*> body, vector<TreeNode*> params ) {
     mName = name ;
     mBodyStatments = body ;
     mParams = params ;
-    mArguments = args ;
   } // EnvFunction()
 
   vector<TreeNode*> GetBody() {
@@ -959,10 +956,6 @@ public:
     return mParams ;
   } // GetParams()
 
-  vector<TreeNode*> GetArguments() {
-    return mArguments ;
-  } // GetArguments()
-
   void SetBody( vector<TreeNode*> body ) {
     mBodyStatments = body ;
   } // SetBody()
@@ -970,10 +963,6 @@ public:
   void SetParams( vector<TreeNode*> paramList ) {
     mParams = paramList ;
   } // SerParams()
-
-  void SetArguments( vector<TreeNode*> argList ) {
-    mArguments = argList ;
-  } // SerArguments()
 
 }; // class EnvFunction
 
@@ -984,8 +973,8 @@ private:
   TreeNode* mResultPrt ;
   map<string, int> mCommandMap ;
   map<string, TreeNode*> mSymBindingMap ;
-  map<string, TreeNode*> mFunctionMap ; // 回傳body
   map<string, TreeNode*> mLocalVarMap ;
+  map<TreeNode*, EnvFunction*> mFunctionMap ;
   map<string, int> mPredictionCmdMap ;
   // Return true if given string is a Internal Command
   bool HasCmd( string cmdStr ) {
@@ -1008,6 +997,16 @@ private:
     else if ( iter2 != mLocalVarMap.end( ) ) return true ;
     else return false ;
   } // HasBinding()
+  // Return true is Function is exit
+  bool HasFunction( TreeNode* t ) {
+    map<TreeNode*, EnvFunction*>::iterator it ;
+    it = mFunctionMap.find( t ) ;
+    if ( it == mFunctionMap.end() )
+      return false ;
+    else
+      return true ;
+
+  } // HasFunction()
   // Return Bound TreeNode
   TreeNode* GetBinding( string symStr ) {
     if ( ! HasBinding( symStr ) ) {
@@ -1215,6 +1214,8 @@ public:
                 ( firstArg->TokenType() == SYMBOL || firstArg->TokenType() == QUOTE ) ) {
         string sym = firstArg->Content() ;
         
+        // 檢查是不是user function
+
         bool boundToFunction = false ;
         if ( HasBinding( sym ) && HasCmd( GetBinding( sym )->Content() ) ) // check SYM is SYMBOL
           boundToFunction = true ;
@@ -1239,7 +1240,7 @@ public:
             else if ( sym == "cond" ) return Eval_cond( expr, firstArg, depth ) ;
             // let的format error需要main-expr
             else if ( sym == "let" ) return Eval_let( expr, firstArg, depth ) ;
-            else if ( sym == "lambda" ) return Eval_lambda( expr, firstArg, depth,  false ) ;
+            else if ( sym == "lambda" ) return Eval_lambda( expr, firstArg ) ;
 
 
           } // else if()
@@ -1321,8 +1322,14 @@ public:
 
         TreeNode* leftArg = Evaluate( firstArg, depth+1 ) ;
 
-        if ( leftArg->Content() == "lambda" )
-          return Eval_lambda( expr, firstArg, depth, true ) ;
+        // 以下是沒有binding的nameless lambda expression
+        if ( leftArg->Content() == "lambda" && HasFunction( leftArg ) ) {
+          TreeNode* result = Eval_func( expr, leftArg, depth ) ;
+          map<TreeNode*, EnvFunction*>::iterator it ;
+          it = mFunctionMap.find( leftArg ) ;
+          mFunctionMap.erase( it ) ;
+          return result ;
+        } // if()
 
 
         if ( leftArg->NodeType() == ATOM_NODE && leftArg->TokenType() == SYMBOL )
@@ -2141,8 +2148,12 @@ public:
     // 檢查format
     vector<TreeNode*> args = GetUnevaledArgs( expr ) ;
 
-    if ( args.size() != 2 )
+    if ( args.size() < 2 )
       throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+    // 送去function define
+    // if ( args.size() > 2 )
+    //   return Eval_functionDef( expr, cmd, depth ) ;
 
     TreeNode* arg1 = args.at( 0 ) ;
     TreeNode* arg2 = args.at( 1 ) ;
@@ -2157,7 +2168,7 @@ public:
     // 如果arg2的eval有誤 不能redefine
     // 所以要先eval arg2
     arg2 = Evaluate( arg2, depth+1 ) ;
-
+    // 若arg2是一個lambda 會回傳atom(lambda)
     // arg2 eval過後 處理binding
     if ( HasBinding( arg1->Content() ) ) {
       mSymBindingMap.erase( arg1->Content() ) ;
@@ -2166,8 +2177,10 @@ public:
     mSymBindingMap[ arg1->Content() ] = arg2  ;
 
     TreeNode* result = new TreeNode() ;
-    string s = arg1->Content() + " defined" ;
+    // string s = arg1->Content() + " defined" ;
+    string s = arg1->Content() ;
     result->InitAtom( s, SYMBOL ) ;
+    result->SetEvaled() ;
     return result ;
 
   } // Eval_define()
@@ -2285,21 +2298,14 @@ public:
 
   } // Eval_let()
 
-  TreeNode* Eval_lambda( TreeNode* expr, TreeNode* cmdNode, int depth, bool doEval ) {
+  TreeNode* Eval_lambda( TreeNode* expr, TreeNode* cmdNode ) {
     TreeNode* result = new TreeNode() ;
     TreeNode* definition ; // lambda expression的部分
     vector<TreeNode*> args ;
     EnvFunction* lambdaFunction = new EnvFunction() ;
 
+    definition = expr ;
 
-    if ( doEval )
-      definition = expr->mLeft ;
-    else
-      definition = expr ;
-
-    /*
-    前半部處理lambda的definition
-    */
 
     // definition format : ( lambda (0-or-more-SYM) 1-or-more-expr )
     args = GetUnevaledArgs( definition ) ;
@@ -2325,53 +2331,62 @@ public:
 
     } // for
 
-    // 無錯誤 若是單純 ! doEval 就return
-    result->InitAtom( "lambda", SYMBOL ) ;
-    result->SetEvaled() ;
-    if ( ! doEval ) {
-      return result ;
-    } // if()
 
     // 無錯誤 組成一個function
     args.erase( args.begin() ) ;
     vector<TreeNode*> statements = args ;
-    lambdaFunction->SetParams( params ) ;
     lambdaFunction->SetBody( statements ) ;
-
-    // 開始處理"Argument" 並eval
-    TreeNode* mainExpr = expr ;
-    vector<TreeNode*> arguments = GetUnevaledArgs( mainExpr ) ;
-    lambdaFunction->SetArguments( arguments ) ;
-
-    // arg數量和params不同
-    if ( params.size() != arguments.size() )
-      throw OurSchemeException( NUM_OF_ARGS, "lambda expression" ) ;
-
-    // 設定localvar
-    for ( int i = 0 ; i < params.size() ; i ++ ) {
-      mLocalVarMap[ params.at( i )->Content() ] = arguments.at( i ) ;
-    } // for()
-
-    // 輪流執行statements
-    result = NULL ;
-    for ( int i = 0 ; i < statements.size() ; i++ ) {
-      result = Evaluate( statements.at( i ), depth+1 ) ;
-    } // for()
-
-    // 消滅localMap
-    for ( int i = 0 ; i < params.size() ; i ++ ) {
-      map<string, TreeNode*>::iterator it ;
-      it = mLocalVarMap.find( params.at( i )->Content() ) ;
-      mLocalVarMap.erase( it ) ;
-    } // for()
-
-    if ( result == NULL )
-      throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+    lambdaFunction->SetParams( params ) ;
+    result->InitAtom( "lambda", SYMBOL ) ;
+    result->SetEvaled() ;
+    mFunctionMap[ result ] = lambdaFunction ;
 
     return result ;
 
   } // Eval_lambda()
 
+  TreeNode* Eval_func( TreeNode* mainExpr, TreeNode* funcNode, int depth ) {
+
+    // 先取得function node
+    EnvFunction* func = mFunctionMap[ funcNode ] ;
+    vector<TreeNode*> params = func->GetParams() ;
+    vector<TreeNode*> statements = func->GetBody() ;
+    int paramsNum = params.size() ;
+
+    vector<TreeNode*> args = GetUnevaledArgs( mainExpr ) ;
+
+    // 檢查args數量
+    if ( paramsNum != args.size() )
+      throw OurSchemeException( NUM_OF_ARGS, funcNode ) ;
+
+    // 開始做binding
+    for ( int i = 0 ; i < paramsNum ; i++ ) {
+      string param = params.at( i )->Content() ;
+      mLocalVarMap[ param ] = Evaluate( args.at( i ), depth+1 ) ;
+    } // for()
+    
+    // 依序eval
+    TreeNode* lastEval = NULL ;
+    for ( int i = 0 ; i < statements.size() ; i++ ) {
+      lastEval = Evaluate( statements.at( i ), depth+1 ) ;
+    } // for()
+
+    if ( lastEval == NULL )
+      throw OurSchemeException( NO_RETURN_VAL, mainExpr ) ;
+
+    // 消除loval var的binding
+    for ( int i = 0 ; i < paramsNum ; i++ ) {
+      string param = params.at( i )->Content() ;
+      map<string, TreeNode*>::iterator it ;
+      it = mLocalVarMap.find( param ) ;
+      mLocalVarMap.erase( it ) ;
+    } // for()
+
+
+    return lastEval ;
+
+  } // Eval_func()
+  
   void Result_Printer( TreeNode* expr ) {
     if ( expr == NULL )
       cout << "expr is NULL..." ;
