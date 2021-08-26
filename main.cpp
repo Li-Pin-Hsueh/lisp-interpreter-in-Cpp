@@ -1333,7 +1333,9 @@ public:
           TreeNode* result = Eval_func( expr, leftArg, depth ) ;
           map<TreeNode*, EnvFunction*>::iterator it ;
           it = mFunctionMap.find( leftArg ) ;
-          mFunctionMap.erase( it ) ;
+          if ( it != mFunctionMap.end() )
+            mFunctionMap.erase( it ) ;
+
           return result ;
         } // if()
 
@@ -2158,8 +2160,8 @@ public:
       throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
 
     // 送去function define
-    // if ( args.size() > 2  || args.at( 0 )->NodeType() == CONS_NODE )
-    //   return Eval_functionDef( expr, cmd, depth ) ;
+    if ( args.size() > 2  || args.at( 0 )->NodeType() == CONS_NODE )
+      return Eval_funcDef( expr, cmd, depth ) ;
 
     TreeNode* arg1 = args.at( 0 ) ;
     TreeNode* arg2 = args.at( 1 ) ;
@@ -2186,10 +2188,61 @@ public:
     // string s = arg1->Content() + " defined" ;
     string s = arg1->Content() ;
     result->InitAtom( s, SYMBOL ) ;
-    result->SetEvaled() ;
+    // result->SetEvaled() ;
     return result ;
 
   } // Eval_define()
+
+  TreeNode* Eval_funcDef( TreeNode* expr, TreeNode* cmd, int depth ) {
+    // arg1 format : ( SYM 0-or-more-syms )
+    // arg2~argN (statements of function) : expr
+    
+    vector<TreeNode*> args = GetUnevaledArgs( expr ) ;
+    vector<TreeNode*> params ;
+    vector<TreeNode*> statements ;
+    // 檢查arg1 並取得params
+    TreeNode* arg1 = args.at( 0 ) ;
+    string funcName = arg1->mLeft->Content() ;
+    int counter = 0 ;
+    for ( TreeNode* tmp = arg1 ; tmp != NULL ; tmp = tmp->mRight ) {
+      // 檢查non-list
+      if ( tmp->NodeType() == ATOM_NODE && tmp->TokenType() != NIL )
+        throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+      // 檢查非symbol
+      if ( tmp->NodeType() == CONS_NODE && tmp->mLeft->TokenType() != SYMBOL )
+        throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
+
+      // 蒐集params
+      if ( tmp->NodeType() == CONS_NODE ) {
+        counter ++ ;
+        if ( counter > 1 )
+          params.push_back( tmp->mLeft ) ;
+
+      } // if()
+    
+    } // for()
+
+    for ( int i = 1 ; i < args.size() ; i++ ) {
+      statements.push_back( args.at( i ) ) ;
+    } // for()
+
+    EnvFunction* newFunc = new EnvFunction( funcName, statements, params ) ;
+    // 移除原有的define
+    map<string, TreeNode*>::iterator it ;
+    it = mSymBindingMap.find( arg1->Content() ) ;
+    if ( it != mSymBindingMap.end() )
+      mSymBindingMap.erase( it ) ;
+
+    TreeNode* result = new TreeNode() ;
+    result->InitAtom( funcName, SYMBOL ) ;
+    // result->SetEvaled() ;
+    mSymBindingMap[ funcName ] = result ;
+    mFunctionMap[ result ] = newFunc ;
+
+    return result ;
+
+  } // Eval_funcDef()
 
   TreeNode* Eval_begin( TreeNode* expr, TreeNode* cmd, vector<TreeNode*> args, int depth ) {
     if ( args.size() == 0 )
@@ -2368,7 +2421,8 @@ public:
     // 開始做binding
     for ( int i = 0 ; i < paramsNum ; i++ ) {
       string param = params.at( i )->Content() ;
-      mLocalVarMap[ param ] = Evaluate( args.at( i ), depth+1 ) ;
+      TreeNode* result =  Evaluate( args.at( i ), depth+1 ) ;
+      mLocalVarMap[ param ] = result ;
     } // for()
     
     // 依序eval
@@ -2385,7 +2439,8 @@ public:
       string param = params.at( i )->Content() ;
       map<string, TreeNode*>::iterator it ;
       it = mLocalVarMap.find( param ) ;
-      mLocalVarMap.erase( it ) ;
+      if ( it != mLocalVarMap.end() )
+        mLocalVarMap.erase( it ) ;
     } // for()
 
 
@@ -2456,15 +2511,15 @@ public:
     // ATOM-NODE
     else {
 
-      if ( current->GetEvalFlag() && HasCmd( current->Content() ) ) {
+      if ( current->GetEvalFlag() && ( HasCmd( current->Content() ) || HasFunction( current ) ) ) {
         string s = "#<procedure " + current->Content() + ">" ;
         cout << s << endl ;
       } // if()
-      else if ( current->GetEvalFlag() && HasBinding( current->Content() ) ) {
+      else if ( HasBinding( current->Content() ) ) {
         string s = current->Content() + " defined" ;
         cout << s << endl ;
       } // else if()
-      
+
       else if ( current->TokenType() == INT )
         cout << current->IntValue() << endl ;
       else if ( current->TokenType() == FLOAT )
