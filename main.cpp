@@ -1215,6 +1215,12 @@ public:
         string sym = firstArg->Content() ;
         
         // 檢查是不是user function
+        if ( HasBinding( sym ) ) {
+          TreeNode* binding = GetBinding( sym ) ;
+          if ( HasFunction( binding ) )
+            return Eval_func( expr, binding, depth ) ;
+
+        } // if()
 
         bool boundToFunction = false ;
         if ( HasBinding( sym ) && HasCmd( GetBinding( sym )->Content() ) ) // check SYM is SYMBOL
@@ -2152,7 +2158,7 @@ public:
       throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
 
     // 送去function define
-    // if ( args.size() > 2 )
+    // if ( args.size() > 2  || args.at( 0 )->NodeType() == CONS_NODE )
     //   return Eval_functionDef( expr, cmd, depth ) ;
 
     TreeNode* arg1 = args.at( 0 ) ;
@@ -2357,7 +2363,7 @@ public:
 
     // 檢查args數量
     if ( paramsNum != args.size() )
-      throw OurSchemeException( NUM_OF_ARGS, funcNode ) ;
+      throw OurSchemeException( NUM_OF_ARGS, funcNode->Content() ) ;
 
     // 開始做binding
     for ( int i = 0 ; i < paramsNum ; i++ ) {
@@ -2454,6 +2460,11 @@ public:
         string s = "#<procedure " + current->Content() + ">" ;
         cout << s << endl ;
       } // if()
+      else if ( current->GetEvalFlag() && HasBinding( current->Content() ) ) {
+        string s = current->Content() + " defined" ;
+        cout << s << endl ;
+      } // else if()
+      
       else if ( current->TokenType() == INT )
         cout << current->IntValue() << endl ;
       else if ( current->TokenType() == FLOAT )
