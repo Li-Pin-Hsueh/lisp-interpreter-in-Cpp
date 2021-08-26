@@ -9,7 +9,7 @@
 # include <map>
 using namespace std ;
 
-# define CMDNUM 40
+# define CMDNUM 41
 // ===列舉、結構區===
 string gTokenTypeMap[] = { "INIT_TYPE", "LP", "RP", "INT", "FLOAT", "STRING", "DOT",
                            "NIL", "T", "QUOTE", "SYMBOL" } ;
@@ -30,7 +30,7 @@ string gSystemCmd[ CMDNUM ] =
   "integer?", "real?", "number?", "string?", "boolean?", "symbol?", "+", "-", "*", "/",
   "not", "and", "or", ">", ">=", "<", "<=", "=", "string-append", "string>?",
   "string<?", "string=?", "eqv?", "equal?", "begin", "if", "cond", "clean-environment", "exit",
-  "let"
+  "let", "lambda"
 } ;
 
 enum ErrorType {
@@ -47,6 +47,7 @@ class Token ;
 class Lexer ;
 class TreeNode ;
 class Parser ;
+class EnvFunction ;
 class Environment ;
 class OurSchemeException ;
 
@@ -860,6 +861,8 @@ public:
       mErrorMessage = "ERROR (DEFINE format) : " ;
     else if ( eT == FORMAT_ERR && commandStr == "let" )
       mErrorMessage = "ERROR (LET format) : " ;
+    else if ( eT == FORMAT_ERR && commandStr == "lambda" )
+      mErrorMessage = "ERROR (LAMBDA format) : " ;
     // if ( eT == WRONG_ARG_TYPE && cmd->Content() == "car" ) {
     //   mErrorMessage = "ERROR (car" ;
     //   mErrorMessage += " with incorrect argument type) : " ;
@@ -924,6 +927,55 @@ public:
   } // OurSchemeException()
 
 }; // class OuSchemeException
+// =====EnvFunction Class=====
+class EnvFunction {
+private:
+string mName ;
+vector<TreeNode*> mBodyStatments ;
+vector<TreeNode*> mParams ;
+vector<TreeNode*> mArguments ;
+
+
+public:
+  EnvFunction() {
+    mName = "lambda" ;
+    mBodyStatments.clear() ;
+    mParams.clear() ;
+    mArguments.clear() ;
+  } // EnvFunction()
+
+  EnvFunction( string name, vector<TreeNode*> body, vector<TreeNode*> params, vector<TreeNode*> args ) {
+    mName = name ;
+    mBodyStatments = body ;
+    mParams = params ;
+    mArguments = args ;
+  } // EnvFunction()
+
+  vector<TreeNode*> GetBody() {
+    return mBodyStatments ;
+  } // GetBody()
+
+  vector<TreeNode*> GetParams() {
+    return mParams ;
+  } // GetParams()
+
+  vector<TreeNode*> GetArguments() {
+    return mArguments ;
+  } // GetArguments()
+
+  void SetBody( vector<TreeNode*> body ) {
+    mBodyStatments = body ;
+  } // SetBody()
+
+  void SetParams( vector<TreeNode*> paramList ) {
+    mParams = paramList ;
+  } // SerParams()
+
+  void SetArguments( vector<TreeNode*> argList ) {
+    mArguments = argList ;
+  } // SerArguments()
+
+}; // class EnvFunction
 
 // =====Environment Class=====
 class Environment {
@@ -932,8 +984,9 @@ private:
   TreeNode* mResultPrt ;
   map<string, int> mCommandMap ;
   map<string, TreeNode*> mSymBindingMap ;
-  map<string, int> mPredictionCmdMap ;
+  map<string, TreeNode*> mFunctionMap ; // 回傳body
   map<string, TreeNode*> mLocalVarMap ;
+  map<string, int> mPredictionCmdMap ;
   // Return true if given string is a Internal Command
   bool HasCmd( string cmdStr ) {
     map<string, int>::iterator iter ;
@@ -962,12 +1015,13 @@ private:
       return NULL ;
     } // if()
     else {
+      // local variable優先
       map<string, TreeNode*>::iterator iter ;
-      iter = mSymBindingMap.find( symStr ) ;
-      if ( iter != mSymBindingMap.end() )
-        return mSymBindingMap[ symStr ] ;
-      else
+      iter = mLocalVarMap.find( symStr ) ;
+      if ( iter != mLocalVarMap.end() )
         return mLocalVarMap[ symStr ] ;
+      else
+        return mSymBindingMap[ symStr ] ;
       
     } // else
   } // GetBinding()
@@ -1179,12 +1233,15 @@ public:
           if ( depth != 0 && ( sym == "clean-environment" || sym == "exit" || sym == "define" ) )
             throw OurSchemeException( LEVL, sym ) ;
 
-          // SYM is 'define', 'cond'  ||    (proj.3) 'lambda', 'set!', 'let',
-          else if ( sym == "define" || sym == "cond" || sym == "let" ) {
+          // SYM is 'define', 'cond'  ||    (proj.3) 'lambda' || 'set!', 'let',
+          else if ( sym == "define" || sym == "cond" || sym == "let" || sym == "lambda" ) {
             if ( sym == "define" ) return Eval_define( expr, firstArg, depth ) ;
             else if ( sym == "cond" ) return Eval_cond( expr, firstArg, depth ) ;
             // let的format error需要main-expr
             else if ( sym == "let" ) return Eval_let( expr, firstArg, depth ) ;
+            else if ( sym == "lambda" ) return Eval_lambda( expr, firstArg, depth,  false ) ;
+
+
           } // else if()
 
           // SYM is 'if', 'and', 'or'
@@ -1261,7 +1318,13 @@ public:
 
       // first arg是一個( ... )
       else {
+
         TreeNode* leftArg = Evaluate( firstArg, depth+1 ) ;
+
+        if ( leftArg->Content() == "lambda" )
+          return Eval_lambda( expr, firstArg, depth, true ) ;
+
+
         if ( leftArg->NodeType() == ATOM_NODE && leftArg->TokenType() == SYMBOL )
           expr->mLeft = leftArg ;
         else
@@ -2222,6 +2285,93 @@ public:
 
   } // Eval_let()
 
+  TreeNode* Eval_lambda( TreeNode* expr, TreeNode* cmdNode, int depth, bool doEval ) {
+    TreeNode* result = new TreeNode() ;
+    TreeNode* definition ; // lambda expression的部分
+    vector<TreeNode*> args ;
+    EnvFunction* lambdaFunction = new EnvFunction() ;
+
+
+    if ( doEval )
+      definition = expr->mLeft ;
+    else
+      definition = expr ;
+
+    /*
+    前半部處理lambda的definition
+    */
+
+    // definition format : ( lambda (0-or-more-SYM) 1-or-more-expr )
+    args = GetUnevaledArgs( definition ) ;
+    if ( args.size() < 2 )
+      throw OurSchemeException( FORMAT_ERR, expr, cmdNode ) ;
+    // arg1包含0或多個symbol 這些就是function的params
+    TreeNode* arg1 = args.at( 0 ) ;
+    vector<TreeNode*> params ;
+
+    // 收集params並檢查error
+    for ( TreeNode* peek = arg1 ; peek != NULL ; peek = peek->mRight ) {
+      // 檢查non-list
+      if ( peek->NodeType() == ATOM_NODE && peek->TokenType() != NIL )
+        throw OurSchemeException( FORMAT_ERR, expr, cmdNode ) ;
+
+      // 檢查left要是symbol
+      if ( peek->NodeType() == CONS_NODE && peek->mLeft->TokenType() != SYMBOL )
+        throw OurSchemeException( FORMAT_ERR, expr, cmdNode ) ;
+
+      // 避免push到最後那個nil
+      if ( peek->NodeType() == CONS_NODE )
+        params.push_back( peek->mLeft ) ;
+
+    } // for
+
+    // 無錯誤 若是單純 ! doEval 就return
+    result->InitAtom( "lambda", SYMBOL ) ;
+    result->SetEvaled() ;
+    if ( ! doEval ) {
+      return result ;
+    } // if()
+
+    // 無錯誤 組成一個function
+    args.erase( args.begin() ) ;
+    vector<TreeNode*> statements = args ;
+    lambdaFunction->SetParams( params ) ;
+    lambdaFunction->SetBody( statements ) ;
+
+    // 開始處理"Argument" 並eval
+    TreeNode* mainExpr = expr ;
+    vector<TreeNode*> arguments = GetUnevaledArgs( mainExpr ) ;
+    lambdaFunction->SetArguments( arguments ) ;
+
+    // arg數量和params不同
+    if ( params.size() != arguments.size() )
+      throw OurSchemeException( NUM_OF_ARGS, "lambda expression" ) ;
+
+    // 設定localvar
+    for ( int i = 0 ; i < params.size() ; i ++ ) {
+      mLocalVarMap[ params.at( i )->Content() ] = arguments.at( i ) ;
+    } // for()
+
+    // 輪流執行statements
+    result = NULL ;
+    for ( int i = 0 ; i < statements.size() ; i++ ) {
+      result = Evaluate( statements.at( i ), depth+1 ) ;
+    } // for()
+
+    // 消滅localMap
+    for ( int i = 0 ; i < params.size() ; i ++ ) {
+      map<string, TreeNode*>::iterator it ;
+      it = mLocalVarMap.find( params.at( i )->Content() ) ;
+      mLocalVarMap.erase( it ) ;
+    } // for()
+
+    if ( result == NULL )
+      throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+
+    return result ;
+
+  } // Eval_lambda()
+
   void Result_Printer( TreeNode* expr ) {
     if ( expr == NULL )
       cout << "expr is NULL..." ;
@@ -2305,6 +2455,7 @@ public:
   } // Result_PrettyPrinter()
 
 }; // class Environment
+
 
 // =======全域函式=======
 
