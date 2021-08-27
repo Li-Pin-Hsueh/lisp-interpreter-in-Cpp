@@ -930,9 +930,9 @@ public:
 // =====EnvFunction Class=====
 class EnvFunction {
 private:
-string mName ;
-vector<TreeNode*> mBodyStatments ;
-vector<TreeNode*> mParams ;
+  string mName ;
+  vector<TreeNode*> mBodyStatments ;
+  vector<TreeNode*> mParams ;
 
 
 public:
@@ -962,7 +962,7 @@ public:
 
   void SetParams( vector<TreeNode*> paramList ) {
     mParams = paramList ;
-  } // SerParams()
+  } // SetParams()
 
 }; // class EnvFunction
 
@@ -973,6 +973,7 @@ private:
   TreeNode* mResultPrt ;
   map<string, int> mCommandMap ;
   map<string, TreeNode*> mSymBindingMap ;
+  // localVar應該改用stack
   map<string, TreeNode*> mLocalVarMap ;
   map<TreeNode*, EnvFunction*> mFunctionMap ;
   map<string, int> mPredictionCmdMap ;
@@ -1185,7 +1186,9 @@ public:
       } // else if()
       else {
         TreeNode* result = GetBinding( sym ) ;
-        result->SetEvaled() ;
+        if ( HasFunction( result ) )
+          result->SetEvaled() ;
+        
         return result ;
       } // else
 
@@ -2264,6 +2267,7 @@ public:
     TreeNode* result = new TreeNode() ;
 
     mSymBindingMap.clear() ;
+    mFunctionMap.clear() ;
 
     result->InitAtom( "environment cleaned", SYMBOL ) ;
     return result ;
@@ -2296,7 +2300,7 @@ public:
     
     for ( TreeNode* peek = arg1 ; peek != NULL ; peek = peek->mRight ) {
       if ( peek->NodeType() == ATOM_NODE && peek->TokenType() != NIL )
-        throw( FORMAT_ERR, expr, cmd ) ;
+        throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
       
       if ( peek->NodeType() == ATOM_NODE ) // 右下角的nil atom
         ;
@@ -2329,11 +2333,12 @@ public:
         // symbol + 1*expr = 2
         if ( counterForElement != 2 )
           throw OurSchemeException( FORMAT_ERR, expr, cmd ) ;
-      } // for()
+      } // else
 
     } // for()
 
     // biding pairs的值
+    vector<TreeNode*> evaledSubexpr ;
     for ( int i = 0 ; i < pairs.size() ; i++ ) {
       TreeNode* current = pairs.at( i ) ;
       TreeNode* sym = current->mLeft ;
@@ -2342,7 +2347,16 @@ public:
       
       string symStr = sym->Content() ;
       // cout << "binding sym: " << symStr << endl ;
-      mLocalVarMap[ symStr ] = Evaluate( subExpr, depth+2 ) ;
+      evaledSubexpr.push_back( Evaluate( subExpr, depth+2 ) ) ;
+    } // for()
+
+    for ( int i = 0 ; i < pairs.size() ; i++ ) {
+      TreeNode* current = pairs.at( i ) ;
+      TreeNode* sym = current->mLeft ;
+      TreeNode* subExpr = current->mRight->mLeft ;
+      string symStr = sym->Content() ;
+
+      mLocalVarMap[ symStr ] = evaledSubexpr.at( i ) ;
     } // for()
 
     // eval arg2~argn
@@ -2351,7 +2365,17 @@ public:
       lastEvaled = Evaluate( args.at( i ), depth+1 ) ;
     } // for()
 
-    mLocalVarMap.clear() ;
+    for ( int i = 0 ; i < pairs.size() ; i++ ) {
+      TreeNode* current = pairs.at( i ) ;
+      TreeNode* sym = current->mLeft ;
+      TreeNode* subExpr = current->mRight->mLeft ;
+      string symStr = sym->Content() ;
+      map<string, TreeNode*>::iterator it ;
+      it = mLocalVarMap.find( symStr ) ;
+      if ( it != mLocalVarMap.end() )
+        mLocalVarMap.erase( it ) ;
+
+    } // for()
 
     return lastEvaled ;
 
@@ -2419,10 +2443,15 @@ public:
       throw OurSchemeException( NUM_OF_ARGS, funcNode->Content() ) ;
 
     // 開始做binding
+    vector<TreeNode*> evaledArgs ;
     for ( int i = 0 ; i < paramsNum ; i++ ) {
       string param = params.at( i )->Content() ;
-      TreeNode* result =  Evaluate( args.at( i ), depth+1 ) ;
-      mLocalVarMap[ param ] = result ;
+      evaledArgs.push_back( Evaluate( args.at( i ), depth+1 ) ) ;
+    } // for()
+
+    for ( int i = 0 ; i < paramsNum ; i++ ) {
+      string param = params.at( i )->Content() ;
+      mLocalVarMap[ param ] = evaledArgs.at( i ) ;
     } // for()
     
     // 依序eval
@@ -2511,11 +2540,12 @@ public:
     // ATOM-NODE
     else {
 
-      if ( current->GetEvalFlag() && ( HasCmd( current->Content() ) || HasFunction( current ) ) ) {
+      if ( current->GetEvalFlag() && ( HasCmd( current->Content() ) ||
+                                       HasFunction( GetBinding( current->Content() ) ) ) ) {
         string s = "#<procedure " + current->Content() + ">" ;
         cout << s << endl ;
       } // if()
-      else if ( HasBinding( current->Content() ) ) {
+      else if ( HasBinding( current->Content() ) && current->TokenType() == SYMBOL ) {
         string s = current->Content() + " defined" ;
         cout << s << endl ;
       } // else if()
