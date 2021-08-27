@@ -965,7 +965,22 @@ public:
   } // SetParams()
 
 }; // class EnvFunction
+class BoundSet {
+public:
+  string mName ;
+  TreeNode* mBinding ;
 
+  BoundSet() {
+    mName = "" ;
+    mBinding = NULL ;
+  } // BoundSet()
+
+  BoundSet( string s, TreeNode* t ) {
+    mName = s ;
+    mBinding = t ;
+  } // BoundSet()
+
+}; // class BoundSet
 // =====Environment Class=====
 class Environment {
 
@@ -974,9 +989,11 @@ private:
   map<string, int> mCommandMap ;
   map<string, TreeNode*> mSymBindingMap ;
   // localVar應該改用stack
-  map<string, TreeNode*> mLocalVarMap ;
+  // map<string, TreeNode*> mLocalVarMap ;
+  vector<BoundSet*> mLocalVarSet ;
   map<TreeNode*, EnvFunction*> mFunctionMap ;
   map<string, int> mPredictionCmdMap ;
+
   // Return true if given string is a Internal Command
   bool HasCmd( string cmdStr ) {
     map<string, int>::iterator iter ;
@@ -991,11 +1008,16 @@ private:
   // Return true if Symbol is bound
   bool HasBinding( string symStr ) {
     map<string, TreeNode*>::iterator iter1 ;
-    map<string, TreeNode*>::iterator iter2 ;
     iter1 = mSymBindingMap.find( symStr ) ;
-    iter2 = mLocalVarMap.find( symStr ) ;
+
+    // 從localVarSet找
+    for ( int i = 0 ; i < mLocalVarSet.size() ; i++ ) {
+      if ( mLocalVarSet.at( i )->mName == symStr )
+        return true ;
+    } // for()
+
     if ( iter1 != mSymBindingMap.end() ) return true ;
-    else if ( iter2 != mLocalVarMap.end( ) ) return true ;
+
     else return false ;
   } // HasBinding()
   // Return true is Function is exit
@@ -1016,12 +1038,18 @@ private:
     } // if()
     else {
       // local variable優先
-      map<string, TreeNode*>::iterator iter ;
-      iter = mLocalVarMap.find( symStr ) ;
-      if ( iter != mLocalVarMap.end() )
-        return mLocalVarMap[ symStr ] ;
-      else
-        return mSymBindingMap[ symStr ] ;
+      // map<string, TreeNode*>::iterator iter ;
+      // iter = mLocalVarMap.find( symStr ) ;
+
+      // 從後面開始找 先進後出
+      for ( int i = mLocalVarSet.size() - 1 ; i >= 0 ; i-- ) {
+        if ( mLocalVarSet.at( i )->mName == symStr )
+          return mLocalVarSet.at( i )->mBinding ;
+        
+      } // for()
+
+
+      return mSymBindingMap[ symStr ] ;
       
     } // else
   } // GetBinding()
@@ -2148,6 +2176,7 @@ public:
     // throw no return value
     throw OurSchemeException( NO_RETURN_VAL, expr ) ;
     
+    
   } // Eval_cond()
 
   TreeNode* Eval_define( TreeNode* expr, TreeNode* cmd, int depth ) {
@@ -2338,7 +2367,7 @@ public:
     } // for()
 
     // biding pairs的值
-    vector<TreeNode*> evaledSubexpr ;
+    vector<BoundSet*> evaledSubexpr ;
     for ( int i = 0 ; i < pairs.size() ; i++ ) {
       TreeNode* current = pairs.at( i ) ;
       TreeNode* sym = current->mLeft ;
@@ -2346,17 +2375,15 @@ public:
 
       
       string symStr = sym->Content() ;
+      BoundSet* bs = new BoundSet() ;
+      bs->mName = symStr ;
+      bs->mBinding = Evaluate( subExpr, depth+2 ) ;
       // cout << "binding sym: " << symStr << endl ;
-      evaledSubexpr.push_back( Evaluate( subExpr, depth+2 ) ) ;
+      evaledSubexpr.push_back( bs ) ;
     } // for()
 
-    for ( int i = 0 ; i < pairs.size() ; i++ ) {
-      TreeNode* current = pairs.at( i ) ;
-      TreeNode* sym = current->mLeft ;
-      TreeNode* subExpr = current->mRight->mLeft ;
-      string symStr = sym->Content() ;
-
-      mLocalVarMap[ symStr ] = evaledSubexpr.at( i ) ;
+    for ( int i = 0 ; i < evaledSubexpr.size() ; i++ ) {
+      mLocalVarSet.push_back( evaledSubexpr.at( i ) ) ;
     } // for()
 
     // eval arg2~argn
@@ -2366,15 +2393,8 @@ public:
     } // for()
 
     for ( int i = 0 ; i < pairs.size() ; i++ ) {
-      TreeNode* current = pairs.at( i ) ;
-      TreeNode* sym = current->mLeft ;
-      TreeNode* subExpr = current->mRight->mLeft ;
-      string symStr = sym->Content() ;
-      map<string, TreeNode*>::iterator it ;
-      it = mLocalVarMap.find( symStr ) ;
-      if ( it != mLocalVarMap.end() )
-        mLocalVarMap.erase( it ) ;
-
+      // pop
+      mLocalVarSet.pop_back() ;
     } // for()
 
     return lastEvaled ;
@@ -2443,15 +2463,16 @@ public:
       throw OurSchemeException( NUM_OF_ARGS, funcNode->Content() ) ;
 
     // 開始做binding
-    vector<TreeNode*> evaledArgs ;
+    vector<BoundSet*> evaledArgs ;
     for ( int i = 0 ; i < paramsNum ; i++ ) {
       string param = params.at( i )->Content() ;
-      evaledArgs.push_back( Evaluate( args.at( i ), depth+1 ) ) ;
+      TreeNode* evaled = Evaluate( args.at( i ), depth+1 ) ;
+      BoundSet* bs = new BoundSet( param, evaled ) ;
+      evaledArgs.push_back( bs ) ;
     } // for()
 
     for ( int i = 0 ; i < paramsNum ; i++ ) {
-      string param = params.at( i )->Content() ;
-      mLocalVarMap[ param ] = evaledArgs.at( i ) ;
+      mLocalVarSet.push_back( evaledArgs.at( i ) ) ;
     } // for()
     
     // 依序eval
@@ -2465,11 +2486,7 @@ public:
 
     // 消除loval var的binding
     for ( int i = 0 ; i < paramsNum ; i++ ) {
-      string param = params.at( i )->Content() ;
-      map<string, TreeNode*>::iterator it ;
-      it = mLocalVarMap.find( param ) ;
-      if ( it != mLocalVarMap.end() )
-        mLocalVarMap.erase( it ) ;
+      mLocalVarSet.pop_back() ;
     } // for()
 
 
