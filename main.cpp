@@ -35,7 +35,7 @@ string gSystemCmd[ CMDNUM ] =
 
 enum ErrorType {
   EMPTY, UNBND_SYM, NON_LIST, APLY_NON_FUN, LEVL, NUM_OF_ARGS, WRONG_ARG_TYPE,
-  DIV_ZERO, NO_RETURN_VAL, FORMAT_ERR
+  DIV_ZERO, NO_RETURN_VAL, FORMAT_ERR, UNB_PARA, UNB_COND, UNB_TEST
 };
 // ===全域變數區===
 bool gSyntaxErrorFlag = false ;
@@ -845,6 +845,12 @@ public:
       mErrorMessage = "ERROR (division by zero) : " ;
     else if ( eT == NO_RETURN_VAL )
       mErrorMessage = "ERROR (no return value) : " ;
+    else if ( eT == UNB_PARA )
+      mErrorMessage = "ERROR (unbound parameter) : " ;
+    else if ( eT == UNB_COND )
+      mErrorMessage = "ERROR (unbound condition) : " ;
+    else if ( eT == UNB_TEST )
+      mErrorMessage = "ERROR (unbound test-condition) : " ;
     
   } // OurSchemeException()
 
@@ -986,20 +992,19 @@ class Environment {
 
 private:
   TreeNode* mResultPrt ;
-  map<string, int> mCommandMap ;
+  map<string, TreeNode*> mCmdMap ;
+  // map<string, int> mCommandMap ;
   map<string, TreeNode*> mSymBindingMap ;
-  // localVar應該改用stack
-  // map<string, TreeNode*> mLocalVarMap ;
   vector<BoundSet*> mLocalVarSet ;
   map<TreeNode*, EnvFunction*> mFunctionMap ;
   map<string, int> mPredictionCmdMap ;
 
   // Return true if given string is a Internal Command
   bool HasCmd( string cmdStr ) {
-    map<string, int>::iterator iter ;
-    iter = mCommandMap.find( cmdStr ) ;
+    map<string, TreeNode*>::iterator iter ;
+    iter = mCmdMap.find( cmdStr ) ;
 
-    if ( iter == mCommandMap.end() )
+    if ( iter == mCmdMap.end() )
       return false ;
     else
       return true ;
@@ -1073,11 +1078,20 @@ private:
   // Return evaluated args
   vector<TreeNode*> GetEvaluatedArgs( TreeNode* expr, int depth ) {
     vector<TreeNode*> args ;
+    TreeNode* result ;
     for ( TreeNode* next = expr->mRight ; next != NULL  ; next = next->mRight ) {
-      if ( next->NodeType() == CONS_NODE ) 
-        args.push_back( Evaluate( next->mLeft, depth+1 ) ) ;
-      
+      if ( next->NodeType() == CONS_NODE )  {
+        result = Evaluate( next->mLeft, depth+1 ) ;
+
+        if ( result == NULL ) {
+          mLocalVarSet.clear() ;
+          throw OurSchemeException( UNB_PARA, next->mLeft ) ;
+        } // if()
+        
+        args.push_back( result ) ;
+      } // if()
     } // for()
+
 
     return args ;
   } // GetEvaluatedArgs()
@@ -1177,7 +1191,16 @@ public:
   // Initializer
   Environment() {
     for ( int i = 0 ; i < CMDNUM ; i ++ ) {
-      mCommandMap[ gSystemCmd[ i ] ] = i+1 ;
+      TreeNode* cmd = new TreeNode() ;
+      string name = gSystemCmd[ i ] ;
+      if ( name == "quote" )
+        cmd->InitAtom( name, QUOTE ) ;
+      else
+        cmd->InitAtom( name, SYMBOL ) ;
+
+      cmd->SetEvaled() ;
+      mCmdMap[ name ] = cmd ;
+      // mCommandMap[ gSystemCmd[ i ] ] = i+1 ;
     } // for()
 
     mPredictionCmdMap[ "atom?" ] = 1 ;
@@ -1197,26 +1220,23 @@ public:
     
     // Evaluating an atom but NOT a symbol
     if ( expr->NodeType() == ATOM_NODE && expr->TokenType() != SYMBOL && expr->TokenType() != QUOTE ) {
-      // cout << "Evaluated..." << endl ;
       return expr ;
     } // if()
 
     // Evaluating a symbol
     else if ( expr->NodeType() == ATOM_NODE && expr->TokenType() == SYMBOL ) {
-      // 檢查symbol是否在IntnalCmdMap 或 SymBindingMap
+      // 查看 cmdMap 或 SymBindingMap
       string sym = expr->Content() ;
 
       if ( ! ( HasCmd( sym ) || HasBinding( sym ) ) )
         throw OurSchemeException( UNBND_SYM, expr ) ;
       else if ( HasCmd( sym ) ) {
-        expr->SetEvaled() ;
+        // expr->SetEvaled() ;
+        expr = mCmdMap[ sym ] ;
         return expr ;
       } // else if()
       else {
         TreeNode* result = GetBinding( sym ) ;
-        if ( HasFunction( result ) )
-          result->SetEvaled() ;
-        
         return result ;
       } // else
 
@@ -1248,24 +1268,21 @@ public:
         // 檢查是不是user function
         if ( HasBinding( sym ) ) {
           TreeNode* binding = GetBinding( sym ) ;
+          // 若此binding是function 送去eval
           if ( HasFunction( binding ) )
             return Eval_func( expr, binding, depth ) ;
-
         } // if()
 
-        bool boundToFunction = false ;
-        if ( HasBinding( sym ) && HasCmd( GetBinding( sym )->Content() ) ) // check SYM is SYMBOL
-          boundToFunction = true ;
+    
+        if ( HasCmd( sym ) )
+          firstArg = mCmdMap[ sym ] ;
+        else if ( HasBinding( sym ) ) // check SYM is SYMBOL
+          firstArg = GetBinding( sym ) ;
 
-        // 若SYM是Function
-        if ( HasCmd( sym ) || boundToFunction ) {
+        // 若SYM是Function 且是evaled過的binding
+        if ( HasCmd( firstArg->Content() ) && firstArg->GetEvalFlag() ) {
           // SO MUCH TO DO...
-
-          // 將SYM設定成綁定的CMD
-          if ( boundToFunction ) {
-            firstArg = GetBinding( sym ) ;
-            sym =  firstArg->Content() ;
-          } // if()
+          string sym = firstArg->Content() ;
 
           // Level Error ( clean-environment or exit or define )
           if ( depth != 0 && ( sym == "clean-environment" || sym == "exit" || sym == "define" ) )
@@ -1341,7 +1358,7 @@ public:
 
         } // if()
 
-        // SYM is NOT the name of known function
+        // SYM is NOT the name of known function or it's a unevaled cmd
         else {
           if ( ! HasBinding( sym ) )
             throw OurSchemeException( UNBND_SYM, firstArg ) ;
@@ -1358,6 +1375,11 @@ public:
       else {
 
         TreeNode* leftArg = Evaluate( firstArg, depth+1 ) ;
+
+        if ( leftArg == NULL ) {
+          mLocalVarSet.clear() ;
+          throw OurSchemeException( NO_RETURN_VAL, firstArg ) ;
+        } // if()
 
         // 以下是沒有binding的nameless lambda expression
         if ( leftArg->Content() == "lambda" && HasFunction( leftArg ) ) {
@@ -1377,11 +1399,10 @@ public:
           throw OurSchemeException( APLY_NON_FUN, leftArg ) ;
 
         return Evaluate( expr, depth ) ;
+
       } // else
 
     } // else
-
-
 
     return NULL ;
 
@@ -1434,8 +1455,10 @@ public:
     // if ( args.size() != 1 )
     //   throw OurSchemeException( NUM_OF_ARGS, cmd ) ;
 
-    if ( args.at( 0 )->NodeType() == ATOM_NODE )
+    if ( args.at( 0 )->NodeType() == ATOM_NODE ) {
+      mLocalVarSet.clear() ;
       throw OurSchemeException( WRONG_ARG_TYPE, args.at( 0 ), cmd ) ;
+    } // if()
 
     TreeNode* result ;
     
@@ -1752,8 +1775,10 @@ public:
     for ( int i = 0 ; i < args.size() ; i++ ) {
       TreeNode* current = args.at( i ) ;
       if ( current->NodeType() != ATOM_NODE ||
-           ! ( current->TokenType() == INT || current->TokenType() == FLOAT ) )
+           ! ( current->TokenType() == INT || current->TokenType() == FLOAT ) ) {
+        mLocalVarSet.clear() ;
         throw OurSchemeException( WRONG_ARG_TYPE, current, cmd ) ;
+      } // if()
     } // for()
 
     for ( int i = 0 ; i+1 < args.size() ; i++ ) {
@@ -2020,6 +2045,12 @@ public:
     for ( int i = 0 ; i < args.size() ; i ++ ) {
       result = Evaluate( args.at( i ), depth+1 ) ;
 
+      if ( result == NULL ) {
+        mLocalVarSet.clear() ;
+        throw OurSchemeException( UNB_COND, args.at( i ) ) ;
+      } // if()
+
+
       if ( result->NodeType() == ATOM_NODE && result->TokenType() == NIL )
         return result ;
 
@@ -2037,6 +2068,10 @@ public:
 
     for ( int i = 0 ; i < args.size() ; i ++ ) {
       result = Evaluate( args.at( i ), depth+1 ) ;
+      if ( result == NULL ) {
+        mLocalVarSet.clear() ;
+        throw OurSchemeException( UNB_COND, args.at( i ) ) ;
+      } // if()
 
       // 若result非nil
       if ( result->TokenType() != NIL )
@@ -2106,9 +2141,20 @@ public:
 
     TreeNode* cond = Evaluate( args.at( 0 ), depth+1 ) ;
 
+    if ( cond == NULL ) {
+      mLocalVarSet.clear() ;
+      throw OurSchemeException( UNB_TEST, args.at( 0 ) ) ;
+    } // if()
+
     // 沒有nil的condition error
-    if ( cond->TokenType() == NIL && args.size() == 2 )
-      throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+    if ( cond->TokenType() == NIL && args.size() != 3 ) {
+      if ( depth == 0 ) {
+        mLocalVarSet.clear() ;
+        throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+      } // if()
+      else 
+        return NULL ;
+    } // if()
     else if ( cond->TokenType() == NIL )
       return Evaluate( args.at( 2 ), depth+1 ) ;
     else
@@ -2158,11 +2204,22 @@ public:
           lastEval = Evaluate( subExpressions.at( j ), depth+2 ) ;
         } // for()
 
+        if ( depth == 0 && lastEval == NULL ) {
+          mLocalVarSet.clear() ;
+          throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+        } // if()
+
         return lastEval ;
       } // if()
 
       // 其他
       TreeNode* condition =  Evaluate( current->mLeft, depth+2 ) ;
+
+      if ( condition == NULL ) {
+        mLocalVarSet.clear() ;
+        throw OurSchemeException( UNB_TEST, current->mLeft ) ;
+      } // if()
+
       if ( condition->NodeType() == CONS_NODE || condition->TokenType() != NIL ) {
         for ( int j = 0 ; j < subExpressions.size() ; j++ ) {
           lastEval = Evaluate( subExpressions.at( j ), depth+2 ) ;
@@ -2174,7 +2231,12 @@ public:
     } // for()
 
     // throw no return value
-    throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+    if ( depth == 0 ) {
+      mLocalVarSet.clear() ;
+      throw OurSchemeException( NO_RETURN_VAL, expr ) ;
+    } // if()
+    else
+      return NULL ;
     
     
   } // Eval_cond()
@@ -2207,21 +2269,26 @@ public:
 
     // 如果arg2的eval有誤 不能redefine
     // 所以要先eval arg2
-    arg2 = Evaluate( arg2, depth+1 ) ;
+    TreeNode* evaledArg = Evaluate( arg2, depth+1 ) ;
+    if ( evaledArg == NULL ) {
+      mLocalVarSet.clear() ;
+      throw OurSchemeException( NO_RETURN_VAL, arg2 ) ;
+    } // if()
+
     // 若arg2是一個lambda 會回傳atom(lambda)
     // arg2 eval過後 處理binding
     if ( HasBinding( arg1->Content() ) ) {
       mSymBindingMap.erase( arg1->Content() ) ;
     } // if
 
-    mSymBindingMap[ arg1->Content() ] = arg2  ;
+    // evaledArg->SetEvaled()
+    mSymBindingMap[ arg1->Content() ] = evaledArg  ;
 
-    TreeNode* result = new TreeNode() ;
-    // string s = arg1->Content() + " defined" ;
-    string s = arg1->Content() ;
-    result->InitAtom( s, SYMBOL ) ;
-    // result->SetEvaled() ;
-    return result ;
+    // TreeNode* result = new TreeNode() ;
+    // string s = arg1->Content() ;
+    // result->InitAtom( s, SYMBOL ) ;
+    cout << arg1->Content() << " defined" << endl ;
+    return NULL ;
 
   } // Eval_define()
 
@@ -2268,11 +2335,12 @@ public:
 
     TreeNode* result = new TreeNode() ;
     result->InitAtom( funcName, SYMBOL ) ;
-    // result->SetEvaled() ;
+    result->SetEvaled() ;
     mSymBindingMap[ funcName ] = result ;
     mFunctionMap[ result ] = newFunc ;
 
-    return result ;
+    cout << funcName << " defined" << endl ;
+    return NULL ;
 
   } // Eval_funcDef()
 
@@ -2297,6 +2365,7 @@ public:
 
     mSymBindingMap.clear() ;
     mFunctionMap.clear() ;
+    mLocalVarSet.clear() ;
 
     result->InitAtom( "environment cleaned", SYMBOL ) ;
     return result ;
@@ -2378,6 +2447,11 @@ public:
       BoundSet* bs = new BoundSet() ;
       bs->mName = symStr ;
       bs->mBinding = Evaluate( subExpr, depth+2 ) ;
+
+      if ( bs->mBinding == NULL ) {
+        mLocalVarSet.clear() ;
+        throw OurSchemeException( NO_RETURN_VAL, subExpr ) ;
+      } // if()
       // cout << "binding sym: " << symStr << endl ;
       evaledSubexpr.push_back( bs ) ;
     } // for()
@@ -2481,14 +2555,15 @@ public:
       lastEval = Evaluate( statements.at( i ), depth+1 ) ;
     } // for()
 
-    if ( lastEval == NULL )
-      throw OurSchemeException( NO_RETURN_VAL, mainExpr ) ;
-
     // 消除loval var的binding
     for ( int i = 0 ; i < paramsNum ; i++ ) {
       mLocalVarSet.pop_back() ;
     } // for()
 
+    if ( lastEval == NULL && depth == 0 )
+      throw OurSchemeException( NO_RETURN_VAL, mainExpr ) ;
+
+    
 
     return lastEval ;
 
@@ -2496,9 +2571,9 @@ public:
   
   void Result_Printer( TreeNode* expr ) {
     if ( expr == NULL )
-      cout << "expr is NULL..." ;
-
-    Result_PrettyPrinter( expr, true, 0 ) ;
+      ;
+    else 
+      Result_PrettyPrinter( expr, true, 0 ) ;
   } // Result_Printer()
 
   void Result_PrettyPrinter( TreeNode* current, bool expr, int spaces ) {
@@ -2557,15 +2632,15 @@ public:
     // ATOM-NODE
     else {
 
-      if ( current->GetEvalFlag() && ( HasCmd( current->Content() ) ||
-                                       HasFunction( GetBinding( current->Content() ) ) ) ) {
+      if ( current->GetEvalFlag()  ) {
         string s = "#<procedure " + current->Content() + ">" ;
         cout << s << endl ;
       } // if()
-      else if ( HasBinding( current->Content() ) && current->TokenType() == SYMBOL ) {
-        string s = current->Content() + " defined" ;
-        cout << s << endl ;
-      } // else if()
+      // else if ( ! HasCmd( current->Content() ) && HasBinding( current->Content() ) &&
+      //           current->TokenType() == SYMBOL ) {
+      //   string s = current->Content() + " defined" ;
+      //   cout << s << endl ;
+      // } // else if()
 
       else if ( current->TokenType() == INT )
         cout << current->IntValue() << endl ;
@@ -2694,6 +2769,7 @@ int main()
         cout << e.mErrorMessage ;
         if ( e.mExprToPrint != NULL )
           env->Result_Printer( e.mExprToPrint ) ;
+          // Printer( e.mExprToPrint ) ;
         else
           cout << endl ;
 
